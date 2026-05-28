@@ -1,0 +1,19 @@
+# Build output
+build/
+fluxipc-cli
+example_server
+example_client
+
+fluxipc.pc
+
+# Compiled objects and libraries
+*.o
+*.a
+*.so
+*.so.*
+*.dylib
+
+# Editor and OS files
+*~
+*.swp
+.DS_Store
