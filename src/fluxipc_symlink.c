@@ -57,9 +57,14 @@ static void to_abs_path(const char *argv0, char *out, size_t sz)
     if (argv0[0] == '/') {
         snprintf(out, sz, "%s", argv0);
     } else {
-        char cwd[PATH_MAX] = {0};
-        getcwd(cwd, sizeof(cwd));
-        snprintf(out, sz, "%s/%s", cwd, argv0);
+        char cwd[PATH_MAX];
+        if (getcwd(cwd, sizeof(cwd))) {
+            int n = snprintf(out, sz, "%s/", cwd);
+            if (n > 0 && (size_t)n < sz)
+                snprintf(out + n, sz - (size_t)n, "%s", argv0);
+        } else {
+            snprintf(out, sz, "%s", argv0);
+        }
     }
 }
 

@@ -421,8 +421,8 @@ int main(int argc, char **argv)
     register_device("/devices/io/led",        "status-led",      1,   0,   1);
     register_device("/devices/io/relay",      "power-relay",     0,   0,   1);
 
-    printf("[server] %d dynamic endpoints registered\n"
-           "  /devices/stub/primary/{name,value,reset,info}\n"
+    printf("[server] %d dynamic endpoints registered\n", 4 * 4 /* 4 devices × 4 endpoints */);
+    printf("  /devices/stub/primary/{name,value,reset,info}\n"
            "  /devices/stub/secondary/{name,value,reset,info}\n"
            "  /devices/io/led/{name,value,reset,info}\n"
            "  /devices/io/relay/{name,value,reset,info}\n");

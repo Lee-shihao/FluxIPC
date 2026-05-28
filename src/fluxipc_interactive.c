@@ -786,9 +786,335 @@ static void cmd_watch(int ntok, char **tokens)
     printf("\n");
 }
 
-/* ─── Dispatch ────────────────────────────────────────────────────────────── */
-
 #define MAX_TOK 64
+
+/* ─── Inline range expansion ──────────────────────────────────────────────
+ *
+ * Syntax:
+ *   start:end          step defaults to 1 (or -1 if start > end)
+ *   start:end:step     explicit step
+ *
+ * Examples:
+ *   0:100         →  0 1 2 … 100          (step=1 implied)
+ *   0:100:5       →  0 5 10 … 100
+ *   1.0:2.0:0.1   →  1.0 1.1 … 2.0
+ *   10:0:2        →  error: step must be negative for descending range
+ *   10:0:-2       →  10 8 6 4 2 0
+ *
+ * Escape (pass literal colon string to IPC handler):
+ *   \0:100        →  "0:100"   (backslash prefix)
+ *   '0:100:5'     →  "0:100:5" (single-quote wrap)
+ *
+ * Detection heuristic:
+ *   1 or 2 colons, every segment is a valid decimal number, no escape prefix.
+ *
+ * Multiple range args produce a cartesian-product sweep:
+ *   /demo/arithmetic/add  1:3  10:30:10
+ *   → (1,10)(1,20)(1,30)(2,10)(2,20)(2,30)(3,10)(3,20)(3,30)
+ * ──────────────────────────────────────────────────────────────────────── */
+
+#include <math.h>   /* fabs */
+
+/* Maximum values per single range axis */
+#define RANGE_MAX_VALS 4096
+
+typedef struct {
+    int    is_range;       /* 1 = range spec, 0 = literal string          */
+    int    escaped;        /* 1 = was prefixed with \, send stripped form  */
+    char   literal[256];   /* used when is_range==0                        */
+    double *vals;          /* allocated array when is_range==1             */
+    int    nvals;
+} arg_spec_t;
+
+/* Return 1 if s is a valid decimal number (allows leading sign, one dot) */
+static int is_number(const char *s)
+{
+    if (!s || !*s) return 0;
+    const char *p = s;
+    if (*p == '+' || *p == '-') p++;
+    if (!*p) return 0;
+    int digits = 0, dots = 0;
+    for (; *p; p++) {
+        if (*p >= '0' && *p <= '9') { digits++; continue; }
+        if (*p == '.'  && dots == 0) { dots++;  continue; }
+        return 0;
+    }
+    return digits > 0;
+}
+
+/* Parse token into arg_spec_t.  Caller must free spec->vals if is_range.
+ *
+ * Range formats accepted:
+ *   "start:end"        – step defaults to +1 or -1 based on direction
+ *   "start:end:step"   – explicit step (may be fractional or negative)
+ */
+static void parse_arg(const char *tok, arg_spec_t *spec)
+{
+    memset(spec, 0, sizeof(*spec));
+
+    /* Escape: leading backslash → strip it, treat as literal */
+    if (tok[0] == '\\') {
+        spec->is_range = 0;
+        spec->escaped  = 1;
+        snprintf(spec->literal, sizeof(spec->literal), "%s", tok + 1);
+        return;
+    }
+
+    /* Strip surrounding single-quotes → literal */
+    size_t tlen = strlen(tok);
+    if (tlen >= 2 && tok[0] == '\'' && tok[tlen-1] == '\'') {
+        spec->is_range = 0;
+        size_t inner = tlen - 2;
+        if (inner >= sizeof(spec->literal)) inner = sizeof(spec->literal)-1;
+        memcpy(spec->literal, tok + 1, inner);
+        spec->literal[inner] = '\0';
+        return;
+    }
+
+    /* Count colons */
+    int colon_count = 0;
+    for (const char *p = tok; *p; p++)
+        if (*p == ':') colon_count++;
+
+    /* Must have 1 or 2 colons to be a range candidate */
+    if (colon_count < 1 || colon_count > 2) {
+        spec->is_range = 0;
+        snprintf(spec->literal, sizeof(spec->literal), "%s", tok);
+        return;
+    }
+
+    /* Split and validate segments */
+    char tmp[256];
+    snprintf(tmp, sizeof(tmp), "%s", tok);
+
+    char *seg_start = tmp;
+    char *c1 = strchr(seg_start, ':');
+    if (!c1) goto literal;
+    *c1 = '\0';
+    char *seg_end = c1 + 1;
+
+    char *seg_step = NULL;
+    if (colon_count == 2) {
+        char *c2 = strchr(seg_end, ':');
+        if (!c2) goto literal;
+        *c2 = '\0';
+        seg_step = c2 + 1;
+    }
+
+    /* All present segments must be valid numbers */
+    if (!is_number(seg_start) || !is_number(seg_end)) goto literal;
+    if (seg_step && !is_number(seg_step))              goto literal;
+
+    {
+        double vstart = strtod(seg_start, NULL);
+        double vend   = strtod(seg_end,   NULL);
+        double vstep;
+
+        if (seg_step) {
+            vstep = strtod(seg_step, NULL);
+        } else {
+            /* Default step: +1 ascending, -1 descending */
+            vstep = (vend >= vstart) ? 1.0 : -1.0;
+        }
+
+        if (vstep == 0.0) {
+            printf("  Range error: step is zero in '%s'\n", tok);
+            goto literal;
+        }
+
+        /* Direction sanity */
+        if ((vstep > 0 && vstart > vend) || (vstep < 0 && vstart < vend)) {
+            printf("  Range error: step direction mismatch in '%s'\n"
+                   "  Hint: use negative step for descending range, e.g. %g:%g:-1\n",
+                   tok, vstart, vend);
+            goto literal;
+        }
+
+        /* Generate values via index arithmetic (no float drift) */
+        spec->vals = malloc(sizeof(double) * RANGE_MAX_VALS);
+        if (!spec->vals) { spec->is_range = 0; return; }
+
+        spec->nvals   = 0;
+        spec->is_range = 1;
+
+        for (int idx = 0; spec->nvals < RANGE_MAX_VALS; idx++) {
+            double v = vstart + idx * vstep;
+            if (vstep > 0 && v > vend + fabs(vstep) * 0.5) break;
+            if (vstep < 0 && v < vend - fabs(vstep) * 0.5) break;
+            spec->vals[spec->nvals++] = v;
+        }
+    }
+    return;
+
+literal:
+    spec->is_range = 0;
+    snprintf(spec->literal, sizeof(spec->literal), "%s", tok);
+}
+
+static void free_arg_spec(arg_spec_t *spec)
+{
+    if (spec->is_range && spec->vals) { free(spec->vals); spec->vals = NULL; }
+}
+
+/*
+ * Render a double to a compact string: if it's a whole number, no decimal
+ * point; otherwise up to 10 significant digits, trailing zeros stripped.
+ */
+static void fmt_val(double v, char *buf, size_t cap)
+{
+    if (v == (long long)v && fabs(v) < 1e15)
+        snprintf(buf, cap, "%lld", (long long)v);
+    else {
+        snprintf(buf, cap, "%.10g", v);
+    }
+}
+
+/*
+ * Recursive cartesian-product executor.
+ * arg_specs[0..nargs-1] describe each argument position.
+ * call_argv[0] = path (fixed), call_argv[1..nargs] = current values.
+ * depth = current arg index (0-based).
+ */
+static int g_sweep_count;
+static int g_sweep_errors;
+
+static void sweep_recurse(path_node_t *node,
+                           arg_spec_t *specs, int nargs,
+                           char **call_argv, char (*val_bufs)[32],
+                           int depth)
+{
+    if (depth == nargs) {
+        /* All args fixed — fire the call */
+        char out[64 * 1024];
+        size_t out_len = 0;
+
+        /* Build compact label showing all varying args */
+        char label[256] = "";
+        int loff = 0;
+        for (int i = 0; i < nargs; i++) {
+            if (specs[i].is_range)
+                loff += snprintf(label + loff, sizeof(label) - (size_t)loff,
+                                 "%s%s", i ? "," : "", call_argv[i + 1]);
+        }
+
+        int rc = fluxipc_call(node->sock_path, node->full_path,
+                              nargs + 1, call_argv,
+                              out, sizeof(out), &out_len);
+        g_sweep_count++;
+        printf("  [%4d] (%s) → ", g_sweep_count, label);
+        if (rc < 0) {
+            printf("Error %d: %s\n", rc, strerror(-rc));
+            g_sweep_errors++;
+        } else if (out_len > 0) {
+            /* Print response inline, trimming trailing newline */
+            while (out_len > 0 && (out[out_len-1] == '\n' || out[out_len-1] == '\r'))
+                out_len--;
+            fwrite(out, 1, out_len, stdout);
+            putchar('\n');
+        } else {
+            printf("(ok)\n");
+        }
+        return;
+    }
+
+    arg_spec_t *spec = &specs[depth];
+
+    if (!spec->is_range) {
+        /* Literal arg — just set and recurse */
+        call_argv[depth + 1] = spec->literal;
+        sweep_recurse(node, specs, nargs, call_argv, val_bufs, depth + 1);
+    } else {
+        /* Range arg — iterate over all values */
+        for (int i = 0; i < spec->nvals; i++) {
+            fmt_val(spec->vals[i], val_bufs[depth], 32);
+            call_argv[depth + 1] = val_bufs[depth];
+            sweep_recurse(node, specs, nargs, call_argv, val_bufs, depth + 1);
+        }
+    }
+}
+
+/*
+ * Count how many range args exist among specs[0..nargs-1].
+ * Returns total number of calls = product of all range lengths.
+ */
+static long long sweep_call_count(arg_spec_t *specs, int nargs)
+{
+    long long total = 1;
+    for (int i = 0; i < nargs; i++)
+        if (specs[i].is_range) total *= specs[i].nvals;
+    return total;
+}
+
+/*
+ * Main inline-range dispatch: called from dispatch() when any argument
+ * (tokens[1..ntok-1]) contains a range spec, and cmd resolves to a leaf.
+ *
+ * Prints a summary header, runs the cartesian product, then a footer.
+ */
+static void dispatch_with_ranges(path_node_t *node,
+                                  char **tokens, int ntok)
+{
+    int nargs = ntok - 1;   /* number of positional args (excluding path) */
+    arg_spec_t specs[MAX_TOK];
+    char val_bufs[MAX_TOK][32];
+
+    /* Parse all argument tokens */
+    int has_range = 0;
+    for (int i = 0; i < nargs; i++) {
+        parse_arg(tokens[i + 1], &specs[i]);
+        if (specs[i].is_range) has_range++;
+    }
+
+    if (!has_range) {
+        /* Shouldn't reach here, but handle gracefully */
+        for (int i = 0; i < nargs; i++) free_arg_spec(&specs[i]);
+        return;
+    }
+
+    long long total = sweep_call_count(specs, nargs);
+    if (total > 100000) {
+        printf("  Sweep would make %lld calls — too many (limit 100000).\n"
+               "  Reduce range or step size.\n\n", total);
+        for (int i = 0; i < nargs; i++) free_arg_spec(&specs[i]);
+        return;
+    }
+
+    /* Print header */
+    printf("  Sweep %s  [%d range arg(s), %lld total call(s)]\n",
+           node->full_path, has_range, total);
+    for (int i = 0; i < nargs; i++) {
+        if (specs[i].is_range) {
+            double actual_step = (specs[i].nvals > 1)
+                                 ? specs[i].vals[1] - specs[i].vals[0]
+                                 : 0.0;
+            printf("    arg[%d]: %d values  %g:%g:%g\n",
+                   i + 1,
+                   specs[i].nvals,
+                   specs[i].vals[0],
+                   specs[i].vals[specs[i].nvals - 1],
+                   actual_step);
+        } else {
+            printf("    arg[%d]: literal \"%s\"\n", i + 1, specs[i].literal);
+        }
+    }
+    printf("\n");
+
+    /* Build call_argv: argv[0] = path, argv[1..nargs] = filled by recurse */
+    char *call_argv[MAX_TOK + 1];
+    call_argv[0] = node->full_path;
+
+    g_sweep_count  = 0;
+    g_sweep_errors = 0;
+
+    sweep_recurse(node, specs, nargs, call_argv, val_bufs, 0);
+
+    printf("\n  Sweep done: %d calls, %d error(s).\n\n",
+           g_sweep_count, g_sweep_errors);
+
+    for (int i = 0; i < nargs; i++) free_arg_spec(&specs[i]);
+}
+
+/* ─── Dispatch ────────────────────────────────────────────────────────────── */
 
 static void dispatch(const char *line)
 {
@@ -835,9 +1161,62 @@ static void dispatch(const char *line)
     if (ntok == 1 && node->usage[0])
         printf("  \033[2mUsage: %s %s\033[0m\n\n", node->full_path, node->usage);
 
+    /* ── Inline range detection ─────────────────────────────────────────────
+     * Format: start:end  or  start:end:step
+     * A token is a range if it has 1 or 2 colons and every colon-separated
+     * segment is a valid decimal number (no escape prefix).
+     * ──────────────────────────────────────────────────────────────────────*/
+    if (ntok > 1) {
+        int has_range = 0;
+        for (int i = 1; i < ntok && !has_range; i++) {
+            const char *tok = tokens[i];
+            /* Skip escaped tokens */
+            if (tok[0] == '\\' || (tok[0] == '\'' && tok[strlen(tok)-1] == '\''))
+                continue;
+            /* Count colons */
+            int nc = 0;
+            for (const char *q = tok; *q; q++) if (*q == ':') nc++;
+            if (nc < 1 || nc > 2) continue;
+
+            /* Validate all segments are numbers */
+            char tmp[256]; snprintf(tmp, sizeof(tmp), "%s", tok);
+            char *s1 = tmp;
+            char *c1 = strchr(s1, ':'); if (!c1) continue;
+            *c1 = '\0'; char *s2 = c1 + 1;
+            if (!is_number(s1)) continue;
+            if (nc == 2) {
+                /* Split s2 at the second colon before validating */
+                char *c2 = strchr(s2, ':'); if (!c2) continue;
+                *c2 = '\0'; char *s3 = c2 + 1;
+                if (!is_number(s2) || !is_number(s3)) continue;
+            } else {
+                if (!is_number(s2)) continue;
+            }
+            has_range = 1;
+        }
+        if (has_range) {
+            dispatch_with_ranges(node, tokens, ntok);
+            return;
+        }
+    }
+
+    /* ── Normal single call ─────────────────────────────────────────────── */
     char *call_argv[MAX_TOK];
     call_argv[0] = node->full_path;
-    for (int i = 1; i < ntok; i++) call_argv[i] = tokens[i];
+    for (int i = 1; i < ntok; i++) {
+        /* Strip escape prefix / quotes before sending to handler */
+        const char *tok = tokens[i];
+        if (tok[0] == '\\') {
+            tokens[i]++;          /* skip backslash in-place */
+        } else {
+            size_t tl = strlen(tok);
+            if (tl >= 2 && tok[0] == '\'' && tok[tl-1] == '\'') {
+                tokens[i][tl-1] = '\0';
+                tokens[i]++;
+            }
+        }
+        call_argv[i] = tokens[i];
+    }
 
     char out[64 * 1024];
     size_t out_len = 0;
@@ -872,7 +1251,10 @@ int fluxipc_interactive_init(const char *prog_name)
     printf("  help [path]      – show built-in commands, or details for one endpoint\n");
     printf("  reload           – refresh registry from shared memory\n");
     printf("  watch [s] <path> – call endpoint every s seconds (default 1)\n");
-    printf("  exit             – quit\n\n");
+    printf("  exit             – quit\n");
+    printf("\nRange syntax (inline per argument):\n");
+    printf("  start:end          step=1 (or -1 if descending)\n");
+    printf("  start:end:step     explicit step (float/negative ok)\n\n");
 
     char *line;
     while ((line = readline(g_prompt)) != NULL) {
