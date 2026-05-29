@@ -589,6 +589,26 @@ static char **fluxipc_completer(const char *text, int start, int end)
             (first_word_is("watch") && tok >= 1) ||
             (first_word_is("cd")    && tok >= 1))
             goto do_path;
+
+        /* Show usage when tabbing after a completed leaf path */
+        if (text[0] == '\0') {
+            const char *p = rl_line_buffer;
+            while (*p == ' ' || *p == '\t') p++;
+            const char *e = p;
+            while (*e != ' ' && *e != '\t' && *e != '\0') e++;
+            char first_tok[FLUXIPC_PATH_MAX];
+            size_t flen = (size_t)(e - p);
+            if (flen < sizeof(first_tok)) {
+                memcpy(first_tok, p, flen);
+                first_tok[flen] = '\0';
+                path_node_t *n = node_lookup_rel(first_tok);
+                if (n && n->is_leaf && n->usage[0]) {
+                    printf("\n  \033[2m%s\033[0m\n", n->usage);
+                    rl_on_new_line();
+                }
+            }
+        }
+
         return NULL;
     }
 
@@ -605,14 +625,13 @@ static char **fluxipc_completer(const char *text, int start, int end)
 do_path:
     {
         char **matches = rl_completion_matches(text, path_generator);
+        path_node_t *node = NULL;
         if (matches && matches[0]) {
             const char *cname = matches[0];
             if (g_cand_dot_slash && cname[0] == '.' && cname[1] == '/')
                 cname += 2;
 
-            path_node_t *node = NULL;
             if (g_cand_relative || g_cand_dot_slash) {
-                /* cname may be multi-level (e.g. "stub/primary") */
                 node = (strchr(cname, '/'))
                      ? node_lookup_rel(cname)
                      : NULL;
@@ -627,37 +646,15 @@ do_path:
             }
             rl_completion_append_character = (node && node->is_leaf) ? ' ' : '/';
         }
+
+        /* Show usage when tabbing on an exact leaf path */
+        if (node && node->is_leaf && node->usage[0]) {
+            printf("\n  \033[2m%s\033[0m\n", node->usage);
+            rl_on_new_line();
+        }
+
         return matches;
     }
-}
-
-/* ─── Hint on '/' key ─────────────────────────────────────────────────────── */
-
-static int hint_on_slash(int count, int key)
-{
-    (void)count;
-    rl_insert_text("/");
-
-    const char *line = rl_line_buffer;
-    int pos = rl_point;
-    if (pos < 2) return 0;
-
-    char tok[FLUXIPC_PATH_MAX];
-    const char *start = line;
-    while (*start == ' ' || *start == '\t') start++;
-    size_t len = (size_t)(line + pos - start);
-    if (len >= sizeof(tok)) return 0;
-    memcpy(tok, start, len);
-    tok[len] = '\0';
-
-    path_node_t *node = node_lookup_rel(tok);
-    if (node && node->is_leaf && node->usage[0]) {
-        printf("\n  \033[2m%s\033[0m\n", node->usage);
-        rl_on_new_line();
-    }
-
-    (void)key;
-    return 0;
 }
 
 /* ─── Built-in commands ───────────────────────────────────────────────────── */
@@ -1157,10 +1154,6 @@ static void dispatch(const char *line)
         return;
     }
 
-    /* Show usage hint on bare-name invocation */
-    if (ntok == 1 && node->usage[0])
-        printf("  \033[2mUsage: %s %s\033[0m\n\n", node->full_path, node->usage);
-
     /* ── Inline range detection ─────────────────────────────────────────────
      * Format: start:end  or  start:end:step
      * A token is a range if it has 1 or 2 colons and every colon-separated
@@ -1241,7 +1234,6 @@ int fluxipc_interactive_init(const char *prog_name)
 
     rl_attempted_completion_function = fluxipc_completer;
     rl_completion_append_character   = '\0';
-    rl_bind_key('/', hint_on_slash);
     using_history();
 
     printf("\nFluxIPC interactive shell\n");
