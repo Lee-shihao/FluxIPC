@@ -51,6 +51,30 @@ static int get_binary_path(char *out, size_t sz)
     return 0;
 }
 
+/** Collapse /./ and /../ in-place (does not follow symlinks). */
+static void normalize_path(char *path)
+{
+    if (!path || path[0] != '/') return;
+    char *dst = path, *src = path;
+    while (*src) {
+        while (*src == '/') src++;
+        if (!*src) break;
+        char *beg = src;
+        while (*src && *src != '/') src++;
+        size_t len = (size_t)(src - beg);
+        if (len == 1 && beg[0] == '.') continue;
+        if (len == 2 && beg[0] == '.' && beg[1] == '.') {
+            if (dst > path + 1) { dst--; while (dst[-1] != '/') dst--; }
+            continue;
+        }
+        *dst++ = '/';
+        for (size_t i = 0; i < len; i++) dst[i] = beg[i];
+        dst += len;
+    }
+    if (dst == path) *dst++ = '/';
+    *dst = '\0';
+}
+
 /** Normalise argv0 to an absolute path (no readlink follow). */
 static void to_abs_path(const char *argv0, char *out, size_t sz)
 {
@@ -66,6 +90,7 @@ static void to_abs_path(const char *argv0, char *out, size_t sz)
             snprintf(out, sz, "%s", argv0);
         }
     }
+    normalize_path(out);
 }
 
 /* ─── Create ──────────────────────────────────────────────────────────────── */
