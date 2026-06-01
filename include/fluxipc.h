@@ -107,7 +107,44 @@ void fluxipc_destroy(void);
 /* ─── Help ────────────────────────────────────────────────────────────────── */
 void fluxipc_usage(const char *prog);
 
-/* ─── Client symlink dispatch ─────────────────────────────────────────────── */
+/* ─── Client API ────────────────────────────────────────────────────────────── */
+
+/** Callback for fluxipc_list_endpoints: receives one active endpoint. */
+typedef void (*fluxipc_list_cb)(const char *path, uint32_t id,
+                                const char *usage, void *userdata);
+
+/**
+ * Enumerate active IPC endpoints for a running server.
+ * Opens the server's shared memory read-only, locks, iterates,
+ * and calls @p cb for each active entry, then unlocks and closes.
+ *
+ * @return 0 on success, -ENOENT if shm cannot be opened.
+ */
+int fluxipc_list_endpoints(const char *prog_name,
+                           fluxipc_list_cb cb, void *userdata);
+
+/**
+ * Low-level single IPC call to a Unix socket.
+ * Sends path + arguments, receives response.
+ *
+ * @return status from the handler (0 on success, negative errno on error).
+ */
+int fluxipc_call(const char *sock_path, const char *ipc_path,
+                 int argc, char **argv,
+                 void *out_buf, size_t out_cap, size_t *out_len);
+
+/**
+ * Resolve a FluxIPC symlink argv[0] into server connection parameters.
+ * e.g. /run/myprog-fluxipc/devices/stub → prog="myprog",
+ *      sock="/run/myprog-fluxipc/myprog.sock", shm="/fluxipc.myprog".
+ *
+ * @return 0 on success, -1 if argv0 is not a FluxIPC symlink.
+ */
+int fluxipc_client_resolve(const char *argv0,
+                           char *out_prog, size_t prog_sz,
+                           char *out_sock, size_t sock_sz,
+                           char *out_shm,  size_t shm_sz);
+
 /**
  * Try to handle this process as a FluxIPC symlink-based client invocation.
  * Call this at the start of main(), before fluxipc_server_init().

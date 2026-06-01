@@ -144,13 +144,5 @@ void symlink_remove(const char *prog_name, const char *ipc_path,
                     const char *run_dir);
 void symlink_remove_all(const char *run_dir);
 
-int  client_resolve(const char *argv0,
-                    char *out_prog, size_t prog_sz,
-                    char *out_sock, size_t sock_sz,
-                    char *out_shm,  size_t shm_sz);
 int  client_ipc_path(const char *argv0, const char *prog_name,
                      char *out_path, size_t path_sz);
-
-int  fluxipc_call(const char *sock_path, const char *ipc_path,
-                  int argc, char **argv,
-                  void *out_buf, size_t out_cap, size_t *out_len);

@@ -109,7 +109,7 @@ int fluxipc_client_dispatch(int argc, char **argv)
     if (argc < 1 || !argv || !argv[0]) return -1;
 
     char prog[FLUXIPC_NAME_MAX], sock[FLUXIPC_PATH_MAX], shm[64];
-    if (client_resolve(argv[0], prog, sizeof(prog),
+    if (fluxipc_client_resolve(argv[0], prog, sizeof(prog),
                        sock, sizeof(sock), shm, sizeof(shm)) != 0)
         return -1;
 
@@ -195,6 +195,25 @@ void fluxipc_destroy(void)
     pthread_mutex_unlock(&ctx->tree_lock);
     pthread_mutex_destroy(&ctx->tree_lock);
     free(ctx);
+}
+
+/* ─── List endpoints ─────────────────────────────────────────────────────── */
+
+int fluxipc_list_endpoints(const char *prog_name,
+                           fluxipc_list_cb cb, void *userdata)
+{
+    fluxipc_shm_t *shm = shm_open_existing(prog_name);
+    if (!shm) return -ENOENT;
+
+    pthread_rwlock_rdlock((pthread_rwlock_t *)&shm->lock);
+    for (int i = 0; i < FLUXIPC_SHM_MAX_ENTRIES; i++) {
+        const fluxipc_shm_entry_t *e = &shm->entries[i];
+        if (e->flags & FLUXIPC_FLAG_ACTIVE)
+            cb(e->path, e->id, e->usage[0] ? e->usage : "", userdata);
+    }
+    pthread_rwlock_unlock((pthread_rwlock_t *)&shm->lock);
+    shm_close_existing(shm);
+    return 0;
 }
 
 /* ─── Usage ───────────────────────────────────────────────────────────────── */

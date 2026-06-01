@@ -14,7 +14,6 @@
  */
 
 #include "fluxipc.h"
-#include "fluxipc_internal.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,28 +38,25 @@ static void print_help(const char *argv0)
         argv0, argv0, argv0, argv0, argv0);
 }
 
+static void print_list_entry(const char *path, uint32_t id,
+                              const char *usage, void *userdata)
+{
+    (void)userdata;
+    printf("%-42s  %-6u  %s\n", path, id, usage[0] ? usage : "-");
+}
+
 static void cmd_list(const char *prog_name)
 {
-    fluxipc_shm_t *shm = shm_open_existing(prog_name);
-    if (!shm) {
-        fprintf(stderr, "fluxipc: cannot open shm for '%s' "
-                "(is the server running?)\n", prog_name);
-        return;
-    }
     printf("\n%-42s  %-6s  %s\n", "PATH", "ID", "USAGE");
     printf("%-42s  %-6s  %s\n",
            "------------------------------------------",
            "------", "-----------------------------");
-    pthread_rwlock_rdlock((pthread_rwlock_t *)&shm->lock);
-    for (int i = 0; i < FLUXIPC_SHM_MAX_ENTRIES; i++) {
-        const fluxipc_shm_entry_t *e = &shm->entries[i];
-        if (e->flags & FLUXIPC_FLAG_ACTIVE)
-            printf("%-42s  %-6u  %s\n",
-                   e->path, e->id, e->usage[0] ? e->usage : "-");
-    }
-    pthread_rwlock_unlock((pthread_rwlock_t *)&shm->lock);
-    shm_close_existing(shm);
-    printf("\n");
+    int rc = fluxipc_list_endpoints(prog_name, print_list_entry, NULL);
+    if (rc < 0)
+        fprintf(stderr, "fluxipc: cannot open shm for '%s' "
+                "(is the server running?)\n", prog_name);
+    else
+        printf("\n");
 }
 
 int main(int argc, char **argv)
@@ -119,8 +115,8 @@ int main(int argc, char **argv)
     if (argv[1][0] == '/') {
         char prog[FLUXIPC_NAME_MAX], sock[FLUXIPC_PATH_MAX], shm_n[64];
         /* try to resolve from argv[0] first, fall back to prompt */
-        if (client_resolve(argv[0], prog, sizeof(prog),
-                           sock, sizeof(sock), shm_n, sizeof(shm_n)) < 0) {
+        if (fluxipc_client_resolve(argv[0], prog, sizeof(prog),
+                                    sock, sizeof(sock), shm_n, sizeof(shm_n)) < 0) {
             fprintf(stderr, "fluxipc: use --server <prog> <path> for direct calls\n");
             return 1;
         }

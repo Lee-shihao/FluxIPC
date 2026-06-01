@@ -168,13 +168,13 @@ void symlink_remove_all(const char *run_dir)
 /* ─── Client-side resolution ──────────────────────────────────────────────── */
 
 /*
- * client_resolve – given argv[0] under /run/<prog>-fluxipc/...,
+ * fluxipc_client_resolve – given argv[0] under /run/<prog>-fluxipc/...,
  * extract prog_name, sock_path, shm_name.
  *
  * Directory name format: <prog>-fluxipc
  * So from /run/myprog-fluxipc/devices/stub we get prog = "myprog".
  */
-int client_resolve(const char *argv0,
+int fluxipc_client_resolve(const char *argv0,
                    char *out_prog, size_t prog_sz,
                    char *out_sock, size_t sock_sz,
                    char *out_shm,  size_t shm_sz)
