@@ -37,6 +37,7 @@
 #include <limits.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <signal.h>
 #include <time.h>
 #include <readline/readline.h>
@@ -555,6 +556,26 @@ static char *builtin_generator(const char *text, int state)
     return NULL;
 }
 
+/* ─── Filesystem path completion (for ! prefix) ──────────────────────────── */
+
+static char *fs_path_generator(const char *text, int state)
+{
+    static const char *stripped;
+    if (!state) {
+        stripped = text + 1;
+        if (*stripped == '\0') stripped = "";
+    }
+    char *m = rl_filename_completion_function(stripped, state);
+    if (!m) return NULL;
+    size_t mlen = strlen(m);
+    char *r = malloc(mlen + 2);
+    if (!r) { free(m); return NULL; }
+    r[0] = '!';
+    memcpy(r + 1, m, mlen + 1);
+    free(m);
+    return r;
+}
+
 static int token_index_at(int pos)
 {
     const char *line = rl_line_buffer;
@@ -581,6 +602,21 @@ static char **fluxipc_completer(const char *text, int start, int end)
 {
     (void)end;
     rl_attempted_completion_over = 1;
+
+    /* ! prefix: filesystem path completion for any token */
+    if (text[0] == '!') {
+        char **matches = rl_completion_matches(text, fs_path_generator);
+        if (matches && matches[0]) {
+            const char *path = matches[0];
+            if (path[0] == '!') path++;
+            struct stat st;
+            if (stat(path, &st) == 0 && S_ISDIR(st.st_mode))
+                rl_completion_append_character = '/';
+            else
+                rl_completion_append_character = ' ';
+        }
+        return matches;
+    }
 
     /* Second+ token: path completion for commands that take a path arg */
     if (start > 0) {
@@ -1124,6 +1160,33 @@ static void dispatch(const char *line)
     while (p && ntok < MAX_TOK) { tokens[ntok++] = p; p = strtok(NULL, " \t"); }
     if (ntok == 0) return;
 
+    /* ! prefix on first token: execute as system command */
+    if (tokens[0][0] == '!') {
+        if (tokens[0][1] == '\0') {
+            printf("  Usage: !<command> [args...]\n\n");
+            return;
+        }
+        tokens[0]++;           /* strip '!' */
+        for (int i = 1; i < ntok; i++)
+            if (tokens[i][0] == '!') tokens[i]++;  /* strip '!' from args */
+        tokens[ntok] = NULL;   /* execvp needs NULL terminator */
+        pid_t pid = fork();
+        if (pid == 0) {
+            execvp(tokens[0], tokens);
+            fprintf(stderr, "  exec: %s\n", strerror(errno));
+            _exit(127);
+        } else if (pid > 0) {
+            int status;
+            waitpid(pid, &status, 0);
+            if (WIFEXITED(status) && WEXITSTATUS(status) != 0)
+                printf("  exit: %d\n", WEXITSTATUS(status));
+        } else {
+            printf("  fork: %s\n", strerror(errno));
+        }
+        printf("\n");
+        return;
+    }
+
     const char *cmd = tokens[0];
 
     if (strcmp(cmd, "ls")     == 0) { cmd_ls(); return; }
@@ -1201,6 +1264,8 @@ static void dispatch(const char *line)
         const char *tok = tokens[i];
         if (tok[0] == '\\') {
             tokens[i]++;          /* skip backslash in-place */
+        } else if (tok[0] == '!') {
+            tokens[i]++;          /* strip ! prefix */
         } else {
             size_t tl = strlen(tok);
             if (tl >= 2 && tok[0] == '\'' && tok[tl-1] == '\'') {
