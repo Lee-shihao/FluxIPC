@@ -168,11 +168,12 @@ void symlink_remove_all(const char *run_dir)
 /* ─── Client-side resolution ──────────────────────────────────────────────── */
 
 /*
- * fluxipc_client_resolve – given argv[0] under /run/<prog>-fluxipc/...,
+ * fluxipc_client_resolve – scan argv[0] for a *-fluxipc* path component,
  * extract prog_name, sock_path, shm_name.
  *
- * Directory name format: <prog>-fluxipc
- * So from /run/myprog-fluxipc/devices/stub we get prog = "myprog".
+ * Works with any run-dir layout:
+ *   /run/user/0/myprog-fluxipc/devices/stub    (root)
+ *   /run/user/1000/myprog-fluxipc/devices/stub (ordinary user)
  */
 int fluxipc_client_resolve(const char *argv0,
                    char *out_prog, size_t prog_sz,
@@ -184,56 +185,64 @@ int fluxipc_client_resolve(const char *argv0,
     char abs0[PATH_MAX];
     to_abs_path(argv0, abs0, sizeof(abs0));
 
-    /* Must be under /run/ */
-    if (strncmp(abs0, "/run/", 5) != 0) return -1;
-
-    /* Extract the directory component (first path element after /run/) */
-    const char *after_run = abs0 + 5;  /* e.g. "myprog-fluxipc/devices/..." */
-    const char *slash = strchr(after_run, '/');
-    if (!slash) return -1;             /* no subpath → not an IPC symlink */
-
-    /* dir_name = "myprog-fluxipc" */
-    size_t dir_len = (size_t)(slash - after_run);
-    char dir_name[FLUXIPC_NAME_MAX];
-    if (dir_len >= sizeof(dir_name)) return -1;
-    memcpy(dir_name, after_run, dir_len);
-    dir_name[dir_len] = '\0';
-
-    /* Must end with "-fluxipc" */
+    /* Find the "-fluxipc" marker anywhere in the path */
     const char *suffix = "-fluxipc";
     size_t slen = strlen(suffix);
-    if (dir_len <= slen) return -1;
-    if (strcmp(dir_name + dir_len - slen, suffix) != 0) return -1;
+    char *f = strstr(abs0, suffix);
+    if (!f) return -1;
 
-    /* prog_name = dir_name without the "-fluxipc" suffix */
-    size_t prog_len = dir_len - slen;
-    if (prog_len >= prog_sz) return -1;
-    memcpy(out_prog, dir_name, prog_len);
+    /* Walk back to start of this path component */
+    char *cs = f;
+    while (cs > abs0 && cs[-1] != '/') cs--;
+
+    /* prog_name = cs..f */
+    size_t prog_len = (size_t)(f - cs);
+    if (prog_len == 0 || prog_len >= prog_sz) return -1;
+    memcpy(out_prog, cs, prog_len);
     out_prog[prog_len] = '\0';
 
-    /* sock and shm derived from prog_name */
-    snprintf(out_sock, sock_sz, "/run/%s-fluxipc/%s.sock", out_prog, out_prog);
+    /* Walk forward to end of component (f + slen), might include "-<uid>" */
+    char *ce = f + slen;
+    while (*ce && *ce != '/') ce++;
+
+    /* run_dir = abs0[0..ce-1] */
+    size_t rlen = (size_t)(ce - abs0);
+    if (rlen >= FLUXIPC_PATH_MAX) return -1;
+    char run_dir[FLUXIPC_PATH_MAX];
+    memcpy(run_dir, abs0, rlen);
+    run_dir[rlen] = '\0';
+
+    /* sock / shm from run_dir + prog_name */
+    snprintf(out_sock, sock_sz, "%s/%s.sock", run_dir, out_prog);
     snprintf(out_shm,  shm_sz,  FLUXIPC_SHM_PREFIX "%s", out_prog);
     return 0;
 }
 
 /*
  * client_ipc_path – extract the IPC path (suffix after run_dir in argv0).
- * e.g. argv0=/run/myprog-fluxipc/devices/stub/name  → /devices/stub/name
+ * Uses strstr("-fluxipc") to locate the run_dir component.
+ * e.g. argv0=/run/user/1000/myprog-fluxipc/devices/stub/name  → /devices/stub/name
  */
 int client_ipc_path(const char *argv0, const char *prog_name,
                     char *out_path, size_t path_sz)
 {
+    (void)prog_name;
     char abs0[PATH_MAX];
     to_abs_path(argv0, abs0, sizeof(abs0));
 
-    char run_dir[PATH_MAX];
-    snprintf(run_dir, sizeof(run_dir), "/run/%s-fluxipc", prog_name);
-    size_t plen = strlen(run_dir);
+    /* Find "-fluxipc" marker */
+    const char *suffix = "-fluxipc";
+    char *f = strstr(abs0, suffix);
+    if (!f) return -1;
 
-    if (strncmp(abs0, run_dir, plen) == 0 && abs0[plen] == '/') {
-        snprintf(out_path, path_sz, "%s", abs0 + plen);
-        return 0;
-    }
-    return -1;
+    /* Walk to end of the fluxipc component */
+    char *ce = f + strlen(suffix);
+    while (*ce && *ce != '/') ce++;
+
+    /* IPC path is the suffix after the run_dir component */
+    if (*ce == '/')
+        snprintf(out_path, path_sz, "%s", ce);
+    else
+        snprintf(out_path, path_sz, "/");
+    return 0;
 }

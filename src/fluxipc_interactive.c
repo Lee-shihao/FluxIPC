@@ -265,7 +265,11 @@ static void load_all_shm(void)
 
     tree_clear();
 
-    DIR *d = opendir("/run");
+    /* Scan /run/user/<uid>/ for *-fluxipc server dirs */
+    char scan_dir[PATH_MAX];
+    snprintf(scan_dir, sizeof(scan_dir), "/run/user/%d", getuid());
+
+    DIR *d = opendir(scan_dir);
     if (d) {
         struct dirent *ent;
         while ((ent = readdir(d))) {
@@ -277,7 +281,11 @@ static void load_all_shm(void)
             if (strcmp(ent->d_name + nlen - slen, suffix) != 0) continue;
 
             char sub[PATH_MAX];
-            snprintf(sub, sizeof(sub), "/run/%s", ent->d_name);
+            /* scan_dir ≤ 21 chars, d_name ≤ 255 → total ≤ 277, well under 4096 */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-truncation"
+            snprintf(sub, sizeof(sub), "%s/%s", scan_dir, ent->d_name);
+#pragma GCC diagnostic pop
             struct stat st;
             if (stat(sub, &st) < 0 || !S_ISDIR(st.st_mode)) continue;
 

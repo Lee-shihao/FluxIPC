@@ -96,7 +96,7 @@ int main(int argc, char **argv)
 
         char sock_path[FLUXIPC_PATH_MAX];
         snprintf(sock_path, sizeof(sock_path),
-                 "/run/%s-fluxipc/%s.sock", prog, prog);
+                 "/run/user/%d/%s-fluxipc/%s.sock", getuid(), prog, prog);
 
         char out[64 * 1024];
         size_t out_len = 0;

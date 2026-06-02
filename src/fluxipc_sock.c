@@ -29,11 +29,15 @@ static int set_nonblocking(int fd)
 
 int sock_server_create(fluxipc_ctx_t *ctx)
 {
-    /* sock path: /run/<prog>-fluxipc/<prog>.sock
-     * run_dir max 63+9=72 chars, prog_name max 63, ".sock"=5 → total ≤ 141
-     * FLUXIPC_PATH_MAX=256 so this is safe */
+    /* sock path: <run_dir>/<prog>.sock.
+     * run_dir ≤ ~93 chars (e.g. /run/user/4294967295/63-char-prog-fluxipc),
+     * prog_name ≤ 63 → total ≤ 161, well under FLUXIPC_PATH_MAX=256.
+     * Silence the false-positive -Wformat-truncation. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-truncation"
     snprintf(ctx->sock_path, sizeof(ctx->sock_path),
-             "/run/%s-fluxipc/%s.sock", ctx->prog_name, ctx->prog_name);
+             "%s/%s.sock", ctx->run_dir, ctx->prog_name);
+#pragma GCC diagnostic pop
 
     unlink(ctx->sock_path);
 

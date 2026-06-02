@@ -22,8 +22,9 @@ static fluxipc_ctx_t *ctx_alloc(const char *prog_name)
     fluxipc_ctx_t *ctx = calloc(1, sizeof(*ctx));
     if (!ctx) return NULL;
     snprintf(ctx->prog_name, FLUXIPC_NAME_MAX, "%s", prog_name);
-    /* /run/<prog>-fluxipc */
-    snprintf(ctx->run_dir, sizeof(ctx->run_dir), "/run/%s-fluxipc", prog_name);
+    /* /run/user/<uid>/<prog>-fluxipc */
+    snprintf(ctx->run_dir, sizeof(ctx->run_dir),
+             "/run/user/%d/%s-fluxipc", getuid(), prog_name);
     ctx->server_fd = -1;
     ctx->shm_fd    = -1;
     ctx->next_id   = 1;
@@ -79,10 +80,15 @@ int fluxipc_server_init(const char *prog_name)
     fluxipc_ctx_t *ctx = ctx_alloc(prog_name);
     if (!ctx) return -ENOMEM;
 
-    /* Create /run/<prog>-fluxipc/ with mode 0755 so ordinary users can enter */
+    /* Create /run/user/<uid>/ parent if needed, then /run/user/<uid>/<prog>-fluxipc/ */
+    {
+        char parent[PATH_MAX];
+        snprintf(parent, sizeof(parent), "%s", ctx->run_dir);
+        char *slash = strrchr(parent, '/');
+        if (slash) { *slash = '\0'; mkdir(parent, 0755); }
+    }
     if (mkdir(ctx->run_dir, 0755) < 0 && errno != EEXIST) {
         perror("fluxipc: mkdir run_dir");
-        /* non-fatal in case parent dir creation needed */
     }
     /* Ensure permissions even if it already existed */
     chmod(ctx->run_dir, 0755);
