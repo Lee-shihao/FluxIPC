@@ -1,0 +1,74 @@
+# tokenmiser — generated .claudeignore
+# https://github.com/phlx0/tokenmiser
+# Prevents Claude from reading files that waste tokens without adding value.
+# Edit freely — your changes are preserved between regenerations.
+
+# ── Build artifacts ────────────────────────────────────────────────────────
+dist/
+build/
+out/
+.next/
+.nuxt/
+.output/
+.vercel/
+.netlify/
+storybook-static/
+
+# ── Dependencies ───────────────────────────────────────────────────────────
+node_modules/
+vendor/
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# ── Generated / compiled ───────────────────────────────────────────────────
+*.min.js
+*.min.css
+*.map
+*.d.ts.map
+
+# ── Lock files (Claude doesn't need these) ─────────────────────────────────
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+Gemfile.lock
+poetry.lock
+go.sum
+
+# ── Logs & temp ────────────────────────────────────────────────────────────
+*.log
+*.tmp
+*.cache
+.DS_Store
+Thumbs.db
+
+# ── Coverage & test artifacts ──────────────────────────────────────────────
+coverage/
+.nyc_output/
+htmlcov/
+.pytest_cache/
+junit.xml
+
+# ── IDE ────────────────────────────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# ── Binary / media files ───────────────────────────────────────────────────
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.ico
+*.webp
+*.pdf
+*.zip
+*.tar
+*.gz
+*.wasm
+*.mp4
+*.mp3
