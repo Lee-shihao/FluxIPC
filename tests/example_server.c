@@ -24,7 +24,7 @@ static int system_info_handler(void *data, int argc, char **argv,
 {
     (void)data; (void)argc; (void)argv;
     int n = snprintf(out, cap,
-        "program=example_server pid=%d uid=%d\n", getpid(), getuid());
+        "program=example_server pid=%d uid=%d", getpid(), getuid());
     *len = (size_t)(n > 0 ? n : 0);
     return 0;
 }
@@ -38,7 +38,7 @@ static int system_uptime_handler(void *data, int argc, char **argv,
     (void)data; (void)argc; (void)argv;
     long uptime = (long)(time(NULL) - g_start_time);
     int n = snprintf(out, cap,
-        "uptime_seconds=%ld uptime_minutes=%ld\n", uptime, uptime / 60);
+        "uptime_seconds=%ld uptime_minutes=%ld", uptime, uptime / 60);
     *len = (size_t)(n > 0 ? n : 0);
     return 0;
 }
@@ -51,7 +51,7 @@ static int system_version_handler(void *data, int argc, char **argv,
 {
     (void)data; (void)argc; (void)argv;
     int n = snprintf(out, cap,
-        "version=2.1.0 build_date=%s\n", __DATE__);
+        "version=2.1.0 build_date=%s", __DATE__);
     *len = (size_t)(n > 0 ? n : 0);
     return 0;
 }
@@ -63,7 +63,7 @@ static int system_shutdown_handler(void *data, int argc, char **argv,
                                     void *out, size_t cap, size_t *len)
 {
     (void)data; (void)argc; (void)argv;
-    int n = snprintf(out, cap, "shutting down... bye!\n");
+    int n = snprintf(out, cap, "shutting down... bye!");
     *len = (size_t)(n > 0 ? n : 0);
     fluxipc_stop();
     return 0;
@@ -90,7 +90,7 @@ static int sensor_status_handler(void *data, int argc, char **argv,
     (void)data; (void)argc; (void)argv;
     sensor_state_t *s = &g_sensor;
     int n = snprintf(out, cap,
-        "temperature=%.1f humidity=%.1f sample_rate=%d ok=true\n",
+        "temperature=%.1f humidity=%.1f sample_rate=%d ok=true",
         s->temperature, s->humidity, s->sample_rate_hz);
     *len = (size_t)(n > 0 ? n : 0);
     return 0;
@@ -104,7 +104,7 @@ static int sensor_calibrate_handler(void *data, int argc, char **argv,
 {
     (void)data;
     const char *offset = (argc > 1) ? argv[1] : "0";
-    int n = snprintf(out, cap, "calibration applied: offset=%s result=ok\n", offset);
+    int n = snprintf(out, cap, "calibration applied: offset=%s result=ok", offset);
     *len = (size_t)(n > 0 ? n : 0);
     return 0;
 }
@@ -117,7 +117,7 @@ static int sensor_config_handler(void *data, int argc, char **argv,
 {
     (void)data;
     if (argc > 1) g_sensor.sample_rate_hz = atoi(argv[1]);
-    int n = snprintf(out, cap, "sample_rate=%d\n", g_sensor.sample_rate_hz);
+    int n = snprintf(out, cap, "sample_rate=%d", g_sensor.sample_rate_hz);
     *len = (size_t)(n > 0 ? n : 0);
     return 0;
 }
@@ -142,12 +142,12 @@ static int motor_speed_handler(void *data, int argc, char **argv,
 {
     (void)data;
     if (!g_motor.enabled) {
-        int n = snprintf(out, cap, "error: motor is disabled\n");
+        int n = snprintf(out, cap, "error: motor is disabled");
         *len = (size_t)(n > 0 ? n : 0);
         return -1;
     }
     if (argc > 1) g_motor.speed_rpm = atoi(argv[1]);
-    int n = snprintf(out, cap, "speed=%d rpm\n", g_motor.speed_rpm);
+    int n = snprintf(out, cap, "speed=%d rpm", g_motor.speed_rpm);
     *len = (size_t)(n > 0 ? n : 0);
     return 0;
 }
@@ -160,11 +160,11 @@ static int motor_position_handler(void *data, int argc, char **argv,
 {
     (void)data; (void)argc; (void)argv;
     if (!g_motor.enabled) {
-        int n = snprintf(out, cap, "error: motor is disabled\n");
+        int n = snprintf(out, cap, "error: motor is disabled");
         *len = (size_t)(n > 0 ? n : 0);
         return -1;
     }
-    int n = snprintf(out, cap, "position=%d deg\n", g_motor.position_deg);
+    int n = snprintf(out, cap, "position=%d deg", g_motor.position_deg);
     *len = (size_t)(n > 0 ? n : 0);
     return 0;
 }
@@ -178,7 +178,7 @@ static int motor_stop_handler(void *data, int argc, char **argv,
     (void)data; (void)argc; (void)argv;
     g_motor.enabled = 0;
     g_motor.speed_rpm = 0;
-    int n = snprintf(out, cap, "motor stopped: enabled=%d speed=%d\n",
+    int n = snprintf(out, cap, "motor stopped: enabled=%d speed=%d",
                      g_motor.enabled, g_motor.speed_rpm);
     *len = (size_t)(n > 0 ? n : 0);
     return 0;
@@ -201,13 +201,13 @@ static int config_log_level_handler(void *data, int argc, char **argv,
     if (argc > 1) {
         int lvl = atoi(argv[1]);
         if (lvl < 0 || lvl > 5) {
-            int n = snprintf(out, cap, "error: log_level must be 0–5\n");
+            int n = snprintf(out, cap, "error: log_level must be 0–5");
             *len = (size_t)(n > 0 ? n : 0);
             return -1;
         }
         g_log_level = lvl;
     }
-    int n = snprintf(out, cap, "log_level=%d\n", g_log_level);
+    int n = snprintf(out, cap, "log_level=%d", g_log_level);
     *len = (size_t)(n > 0 ? n : 0);
     return 0;
 }
@@ -220,7 +220,7 @@ static int config_max_clients_handler(void *data, int argc, char **argv,
 {
     (void)data;
     if (argc > 1) g_max_clients = atoi(argv[1]);
-    int n = snprintf(out, cap, "max_clients=%d\n", g_max_clients);
+    int n = snprintf(out, cap, "max_clients=%d", g_max_clients);
     *len = (size_t)(n > 0 ? n : 0);
     return 0;
 }
@@ -241,7 +241,6 @@ static int demo_echo_handler(void *data, int argc, char **argv,
     int off = snprintf(out, cap, "echo:");
     for (int i = 1; i < argc && (size_t)off < cap - 1; i++)
         off += snprintf((char *)out + off, cap - (size_t)off, " %s", argv[i]);
-    ((char *)out)[off++] = '\n';
     *len = (size_t)off;
     return 0;
 }
@@ -254,7 +253,7 @@ static int demo_counter_handler(void *data, int argc, char **argv,
 {
     (void)data; (void)argc; (void)argv;
     int val = __sync_fetch_and_add(&g_counter, 1);
-    int n = snprintf(out, cap, "counter=%d\n", val);
+    int n = snprintf(out, cap, "counter=%d", val);
     *len = (size_t)(n > 0 ? n : 0);
     return 0;
 }
@@ -268,7 +267,7 @@ static int demo_arithmetic_add_handler(void *data, int argc, char **argv,
     (void)data;
     int a = (argc > 1) ? atoi(argv[1]) : 0;
     int b = (argc > 2) ? atoi(argv[2]) : 0;
-    int n = snprintf(out, cap, "add: %d + %d = %d\n", a, b, a + b);
+    int n = snprintf(out, cap, "add: %d + %d = %d", a, b, a + b);
     *len = (size_t)(n > 0 ? n : 0);
     return 0;
 }
@@ -282,7 +281,7 @@ static int demo_arithmetic_mul_handler(void *data, int argc, char **argv,
     (void)data;
     int a = (argc > 1) ? atoi(argv[1]) : 0;
     int b = (argc > 2) ? atoi(argv[2]) : 0;
-    int n = snprintf(out, cap, "mul: %d * %d = %d\n", a, b, a * b);
+    int n = snprintf(out, cap, "mul: %d * %d = %d", a, b, a * b);
     *len = (size_t)(n > 0 ? n : 0);
     return 0;
 }
@@ -306,7 +305,7 @@ static int device_name_handler(void *data, int argc, char **argv,
 {
     device_ctx_t *ctx = data;
     if (argc > 1) snprintf(ctx->name, sizeof(ctx->name), "%s", argv[1]);
-    int n = snprintf(out, cap, "name: %s\n", ctx->name);
+    int n = snprintf(out, cap, "name: %s", ctx->name);
     *len = (size_t)(n > 0 ? n : 0);
     return 0;
 }
@@ -319,14 +318,14 @@ static int device_value_handler(void *data, int argc, char **argv,
         int v = atoi(argv[1]);
         if (v < ctx->min_val || v > ctx->max_val) {
             int n = snprintf(out, cap,
-                "error: value %d out of range [%d, %d]\n",
+                "error: value %d out of range [%d, %d]",
                 v, ctx->min_val, ctx->max_val);
             *len = (size_t)(n > 0 ? n : 0);
             return -1;
         }
         ctx->value = v;
     }
-    int n = snprintf(out, cap, "value: %d\n", ctx->value);
+    int n = snprintf(out, cap, "value: %d", ctx->value);
     *len = (size_t)(n > 0 ? n : 0);
     return 0;
 }
@@ -337,7 +336,7 @@ static int device_reset_handler(void *data, int argc, char **argv,
     (void)argc; (void)argv;
     device_ctx_t *ctx = data;
     ctx->value = 0;
-    int n = snprintf(out, cap, "device %s reset: value=%d\n",
+    int n = snprintf(out, cap, "device %s reset: value=%d",
                      ctx->name, ctx->value);
     *len = (size_t)(n > 0 ? n : 0);
     return 0;
@@ -349,7 +348,7 @@ static int device_info_handler(void *data, int argc, char **argv,
     (void)argc; (void)argv;
     device_ctx_t *ctx = data;
     int n = snprintf(out, cap,
-        "name=%s value=%d range=[%d,%d]\n",
+        "name=%s value=%d range=[%d,%d]",
         ctx->name, ctx->value, ctx->min_val, ctx->max_val);
     *len = (size_t)(n > 0 ? n : 0);
     return 0;
