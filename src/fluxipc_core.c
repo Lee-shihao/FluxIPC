@@ -137,7 +137,10 @@ int fluxipc_client_dispatch(int argc, char **argv)
         fprintf(stderr, "fluxipc error %d: %s\n", rc, strerror(-rc));
         return rc;
     }
-    if (out_len > 0) fwrite(out, 1, out_len, stdout);
+    if (out_len > 0) {
+        fwrite(out, 1, out_len, stdout);
+        putchar('\n');
+    }
     return 0;
 }
 

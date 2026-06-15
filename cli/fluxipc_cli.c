@@ -107,7 +107,10 @@ int main(int argc, char **argv)
             fprintf(stderr, "fluxipc error %d: %s\n", rc, strerror(-rc));
             return 1;
         }
-        if (out_len > 0) fwrite(out, 1, out_len, stdout);
+        if (out_len > 0) {
+            fwrite(out, 1, out_len, stdout);
+            putchar('\n');
+        }
         return 0;
     }
 
@@ -126,7 +129,10 @@ int main(int argc, char **argv)
                               argc - 1, argv + 1,
                               out, sizeof(out), &out_len);
         if (rc < 0) { fprintf(stderr, "fluxipc error %d: %s\n", rc, strerror(-rc)); return 1; }
-        if (out_len > 0) fwrite(out, 1, out_len, stdout);
+        if (out_len > 0) {
+            fwrite(out, 1, out_len, stdout);
+            putchar('\n');
+        }
         return 0;
     }
 

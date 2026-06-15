@@ -1,0 +1,96 @@
+{
+  "version": "1",
+  "generatedAt": "2026-06-05T02:52:49.724Z",
+  "entries": {
+    "/home/leo/workspace/FluxIPC/tests/example_server.c": {
+      "mtime": 1779950035996.6636,
+      "size": 15138,
+      "symbols": {
+        "purpose": null,
+        "exports": [],
+        "language": "text"
+      }
+    },
+    "/home/leo/workspace/FluxIPC/src/fluxipc_tree.c": {
+      "mtime": 1779345256986.126,
+      "size": 6393,
+      "symbols": {
+        "purpose": null,
+        "exports": [],
+        "language": "text"
+      }
+    },
+    "/home/leo/workspace/FluxIPC/src/fluxipc_symlink.c": {
+      "mtime": 1780389936205.0583,
+      "size": 8112,
+      "symbols": {
+        "purpose": null,
+        "exports": [],
+        "language": "text"
+      }
+    },
+    "/home/leo/workspace/FluxIPC/src/fluxipc_sock.c": {
+      "mtime": 1780390357171.7244,
+      "size": 8376,
+      "symbols": {
+        "purpose": null,
+        "exports": [],
+        "language": "text"
+      }
+    },
+    "/home/leo/workspace/FluxIPC/src/fluxipc_shm.c": {
+      "mtime": 1779345256986.126,
+      "size": 5482,
+      "symbols": {
+        "purpose": null,
+        "exports": [],
+        "language": "text"
+      }
+    },
+    "/home/leo/workspace/FluxIPC/src/fluxipc_interactive.c": {
+      "mtime": 1780390371159.8123,
+      "size": 45720,
+      "symbols": {
+        "purpose": null,
+        "exports": [],
+        "language": "text"
+      }
+    },
+    "/home/leo/workspace/FluxIPC/src/fluxipc_core.c": {
+      "mtime": 1780389888688.7458,
+      "size": 8747,
+      "symbols": {
+        "purpose": null,
+        "exports": [],
+        "language": "text"
+      }
+    },
+    "/home/leo/workspace/FluxIPC/include/fluxipc_internal.h": {
+      "mtime": 1780318125669.388,
+      "size": 6089,
+      "symbols": {
+        "purpose": null,
+        "exports": [],
+        "language": "text"
+      }
+    },
+    "/home/leo/workspace/FluxIPC/include/fluxipc.h": {
+      "mtime": 1780318022611.1765,
+      "size": 7653,
+      "symbols": {
+        "purpose": null,
+        "exports": [],
+        "language": "text"
+      }
+    },
+    "/home/leo/workspace/FluxIPC/cli/fluxipc_cli.c": {
+      "mtime": 1780390012013.54,
+      "size": 5511,
+      "symbols": {
+        "purpose": null,
+        "exports": [],
+        "language": "text"
+      }
+    }
+  }
+}
