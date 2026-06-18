@@ -57,6 +57,19 @@
 #define MCP_HANDLER_BUF    (64  * 1024)
 #define MCP_MAX_ARGS       FLUXIPC_MAX_ARGS
 #define MCP_MAX_CONNS      16
+#define MCP_MAX_SESSIONS   32
+#define MCP_SESSION_ID_LEN 32   /* hex characters */
+
+/* ── DEBUG logging ─────────────────────────────────────────────────────── */
+#ifdef MCP_DEBUG
+#  define MCP_LOG(fmt, ...) \
+    fprintf(stderr, "[mcp] %s:%d " fmt "\n", __func__, __LINE__, ##__VA_ARGS__)
+#  define MCP_LOG_RAW(fmt, ...) \
+    fprintf(stderr, fmt, ##__VA_ARGS__)
+#else
+#  define MCP_LOG(fmt, ...)       do {} while(0)
+#  define MCP_LOG_RAW(fmt, ...)   do {} while(0)
+#endif
 
 /* ── connection types ───────────────────────────────────────────────────── */
 
@@ -66,6 +79,19 @@ typedef enum {
     CONN_SSE_STREAM,        /* persistent SSE channel (GET /sse or GET /mcp) */
 } conn_state_t;
 
+/* Session state persisted across HTTP connections.
+ * Streamable HTTP opens a new TCP connection per request, so session
+ * state (including whether the handshake completed) lives here. */
+typedef struct {
+    char     id[MCP_SESSION_ID_LEN + 1];
+    char     protocol_version[32];
+    int      in_use;
+    int      initialized;   /* received notifications/initialized */
+    time_t   created_at;
+} mcp_session_t;
+
+static mcp_session_t mcp_sessions[MCP_MAX_SESSIONS];
+
 typedef struct {
     int          fd;
     conn_state_t state;
@@ -74,7 +100,7 @@ typedef struct {
     size_t       rcap;
     /* For legacy SSE: POST /messages needs to push response to the SSE fd */
     int          sse_fd;    /* -1 unless this is a /messages POST conn */
-    char         session_id[33]; /* hex session id, set on initialize */
+    char         session_id[MCP_SESSION_ID_LEN + 1]; /* hex session id */
 } mcp_conn_t;
 
 static mcp_conn_t mcp_conns[MCP_MAX_CONNS];
@@ -274,17 +300,31 @@ static int name_to_path(fluxipc_ctx_t *ctx, const char *name,
  * send_http_json – send a complete HTTP/1.1 200 response with JSON body.
  * Used for synchronous POST /mcp responses and legacy POST /messages.
  */
-static void send_http_json(int fd, const char *body, size_t body_len)
+static void send_http_json(int fd, const char *body, size_t body_len,
+                           const char *session_id)
 {
-    char hdr[256];
-    int hlen = snprintf(hdr, sizeof(hdr),
-        "HTTP/1.1 200 OK\r\n"
-        "Content-Type: application/json\r\n"
-        "Content-Length: %zu\r\n"
-        "Access-Control-Allow-Origin: *\r\n"
-        "Connection: close\r\n"
-        "\r\n",
-        body_len);
+    char hdr[384];
+    int hlen;
+    if (session_id && session_id[0]) {
+        hlen = snprintf(hdr, sizeof(hdr),
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: application/json\r\n"
+            "Content-Length: %zu\r\n"
+            "Access-Control-Allow-Origin: *\r\n"
+            "Mcp-Session-Id: %s\r\n"
+            "Connection: close\r\n"
+            "\r\n",
+            body_len, session_id);
+    } else {
+        hlen = snprintf(hdr, sizeof(hdr),
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: application/json\r\n"
+            "Content-Length: %zu\r\n"
+            "Access-Control-Allow-Origin: *\r\n"
+            "Connection: close\r\n"
+            "\r\n",
+            body_len);
+    }
     send_all(fd, hdr, (size_t)hlen);
     send_all(fd, body, body_len);
 }
@@ -293,15 +333,28 @@ static void send_http_json(int fd, const char *body, size_t body_len)
  * send_http_accepted – 202 Accepted (no body), used when a POST /mcp contains
  * only notifications (no id), so no JSON-RPC response is warranted.
  */
-static void send_http_accepted(int fd)
+static void send_http_accepted(int fd, const char *session_id)
 {
-    const char *resp =
-        "HTTP/1.1 202 Accepted\r\n"
-        "Content-Length: 0\r\n"
-        "Access-Control-Allow-Origin: *\r\n"
-        "Connection: close\r\n"
-        "\r\n";
-    send_all(fd, resp, strlen(resp));
+    char resp[320];
+    int len;
+    if (session_id && session_id[0]) {
+        len = snprintf(resp, sizeof(resp),
+            "HTTP/1.1 202 Accepted\r\n"
+            "Content-Length: 0\r\n"
+            "Access-Control-Allow-Origin: *\r\n"
+            "Mcp-Session-Id: %s\r\n"
+            "Connection: close\r\n"
+            "\r\n",
+            session_id);
+    } else {
+        len = snprintf(resp, sizeof(resp),
+            "HTTP/1.1 202 Accepted\r\n"
+            "Content-Length: 0\r\n"
+            "Access-Control-Allow-Origin: *\r\n"
+            "Connection: close\r\n"
+            "\r\n");
+    }
+    send_all(fd, resp, (size_t)len);
 }
 
 /*
@@ -434,11 +487,81 @@ static void deliver_response(mcp_conn_t *c, const char *payload, size_t plen)
             /* Legacy: push to the open SSE channel */
             send_sse_event(c->sse_fd, payload, plen);
         } else {
-            send_http_json(c->fd, payload, plen);
+            send_http_json(c->fd, payload, plen,
+                           c->session_id[0] ? c->session_id : NULL);
         }
     } else {
         /* SSE stream: push as event */
         send_sse_event(c->fd, payload, plen);
+    }
+    MCP_LOG("deliver response len=%zu session=%.32s", plen,
+            c->session_id[0] ? c->session_id : "(none)");
+}
+
+/* ── session management ─────────────────────────────────────────────────── */
+
+static void gen_session_id(char *out, size_t out_sz)
+{
+    int fd = open("/dev/urandom", O_RDONLY);
+    if (fd >= 0) {
+        unsigned char rnd[16];
+        ssize_t n = read(fd, rnd, sizeof(rnd));
+        close(fd);
+        if (n == (ssize_t)sizeof(rnd)) {
+            for (size_t i = 0; i < sizeof(rnd); i++)
+                snprintf(out + i * 2, 3, "%02x", rnd[i]);
+            return;
+        }
+    }
+    /* fallback: time + pid + address-based pseudo-unique id */
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    snprintf(out, out_sz, "%08x%08x%04x%08x",
+             (uint32_t)getpid(),
+             (uint32_t)ts.tv_sec,
+             (uint16_t)(ts.tv_nsec & 0xFFFF),
+             (uint32_t)(uintptr_t)&ts);
+}
+
+static mcp_session_t *session_create(const char *protocol_version)
+{
+    for (int i = 0; i < MCP_MAX_SESSIONS; i++) {
+        if (!mcp_sessions[i].in_use) {
+            mcp_session_t *s = &mcp_sessions[i];
+            memset(s, 0, sizeof(*s));
+            gen_session_id(s->id, sizeof(s->id));
+            if (protocol_version && protocol_version[0])
+                snprintf(s->protocol_version, sizeof(s->protocol_version),
+                         "%s", protocol_version);
+            else
+                snprintf(s->protocol_version, sizeof(s->protocol_version),
+                         "%s", MCP_PROTO_VER);
+            s->in_use     = 1;
+            s->created_at = time(NULL);
+            MCP_LOG("session created id=%.32s proto=%s", s->id, s->protocol_version);
+            return s;
+        }
+    }
+    MCP_LOG("session table full (%d sessions)", MCP_MAX_SESSIONS);
+    return NULL;
+}
+
+static mcp_session_t *session_find(const char *id)
+{
+    if (!id || !id[0]) return NULL;
+    for (int i = 0; i < MCP_MAX_SESSIONS; i++) {
+        if (mcp_sessions[i].in_use &&
+            strncmp(mcp_sessions[i].id, id, MCP_SESSION_ID_LEN) == 0)
+            return &mcp_sessions[i];
+    }
+    return NULL;
+}
+
+static void session_mark_initialized(mcp_session_t *s)
+{
+    if (s && !s->initialized) {
+        s->initialized = 1;
+        MCP_LOG("session %.32s marked initialized", s->id);
     }
 }
 
@@ -455,6 +578,29 @@ static void handle_initialize(mcp_conn_t *c, const char *id,
     const char *use_ver = MCP_PROTO_VER;
     if (strncmp(client_ver, "2024-11-05", 10) == 0)
         use_ver = MCP_PROTO_VER_OLD;
+
+    /* Create or reuse session.
+     * If client sent an existing Mcp-Session-Id, reuse that session;
+     * otherwise create a new one. */
+    mcp_session_t *s = session_find(c->session_id);
+    if (!s) {
+        s = session_create(client_ver);
+        if (!s) {
+            char err[128];
+            size_t elen = build_error(err, sizeof(err), id, -32603,
+                                      "session table full");
+            deliver_response(c, err, elen);
+            return;
+        }
+        /* Store new session id on the connection so it goes into the
+         * Mcp-Session-Id response header. */
+        memcpy(c->session_id, s->id, sizeof(c->session_id));
+        MCP_LOG("initialize new session %.32s (client proto=%s → use=%s)",
+                s->id, client_ver, use_ver);
+    } else {
+        MCP_LOG("initialize reuse session %.32s (client proto=%s → use=%s)",
+                s->id, client_ver, use_ver);
+    }
 
     char result[512];
     snprintf(result, sizeof(result),
@@ -657,6 +803,7 @@ static int dispatch_jsonrpc(mcp_conn_t *c, char *body, fluxipc_ctx_t *ctx)
 
     char method[64];
     if (!js_str(body, "method", method, sizeof(method))) {
+        MCP_LOG("no method in request id=%s", id);
         if (has_id) {
             char err[128];
             size_t elen = build_error(err, sizeof(err), id, -32600,
@@ -667,13 +814,49 @@ static int dispatch_jsonrpc(mcp_conn_t *c, char *body, fluxipc_ctx_t *ctx)
         return 0;  /* notification without method – ignore */
     }
 
+    MCP_LOG("dispatch method=%s id=%s session=%.32s",
+            method, id, c->session_id[0] ? c->session_id : "(none)");
+
+    /* ── session validation (everything except initialize) ── */
+    if (strcmp(method, "initialize") != 0) {
+        if (c->session_id[0] == '\0') {
+            MCP_LOG("missing session for '%s' → -32001", method);
+            if (has_id) {
+                char err[128];
+                size_t elen = build_error(err, sizeof(err), id, -32001,
+                                "Missing Mcp-Session-Id header");
+                deliver_response(c, err, elen);
+                return 1;
+            }
+            return 0;
+        }
+        mcp_session_t *s = session_find(c->session_id);
+        if (!s) {
+            MCP_LOG("invalid session '%.32s' for '%s' → -32001",
+                    c->session_id, method);
+            if (has_id) {
+                char err[128];
+                size_t elen = build_error(err, sizeof(err), id, -32001,
+                                "Invalid or expired session");
+                deliver_response(c, err, elen);
+                return 1;
+            }
+            return 0;
+        }
+        MCP_LOG("session %.32s valid (initialized=%d)",
+                s->id, s->initialized);
+    }
+
     if (strcmp(method, "initialize") == 0) {
         const char *params = strstr(body, "\"params\"");
         handle_initialize(c, id, params ? params : body);
         return 1;
-    } else if (strcmp(method, "notifications/initialized") == 0 ||
-               strcmp(method, "notifications/cancelled") == 0) {
-        /* notifications: no JSON-RPC response */
+    } else if (strcmp(method, "notifications/initialized") == 0) {
+        mcp_session_t *s = session_find(c->session_id);
+        session_mark_initialized(s);
+        return 0;
+    } else if (strcmp(method, "notifications/cancelled") == 0) {
+        MCP_LOG("notification: cancelled (session=%.32s)", c->session_id);
         return 0;
     } else if (strcmp(method, "ping") == 0) {
         handle_ping(c, id);
@@ -686,6 +869,7 @@ static int dispatch_jsonrpc(mcp_conn_t *c, char *body, fluxipc_ctx_t *ctx)
         handle_tools_call(c, id, params ? params : body, ctx);
         return 1;
     } else {
+        MCP_LOG("unknown method '%s'", method);
         if (has_id) {
             char err[128];
             size_t elen = build_error(err, sizeof(err), id, -32601,
@@ -792,10 +976,13 @@ static mcp_conn_t *conn_alloc(int fd)
 
 static void conn_close(mcp_conn_t *c)
 {
+    MCP_LOG("close fd=%d session=%.32s",
+            c->fd, c->session_id[0] ? c->session_id : "(none)");
     if (c->fd > 0) { close(c->fd); c->fd = -1; }
     c->state  = CONN_HTTP_PENDING;
     c->rlen   = 0;
     c->sse_fd = -1;
+    c->session_id[0] = '\0';
 }
 
 /*
@@ -825,6 +1012,10 @@ static void handle_http_request(mcp_conn_t *c,
                                  const char *body, size_t body_len,
                                  fluxipc_ctx_t *ctx)
 {
+    MCP_LOG("%s %s body=%zub session=%.32s",
+            method, path, body_len,
+            c->session_id[0] ? c->session_id : "(none)");
+
     /* ── CORS preflight ── */
     if (strcmp(method, "OPTIONS") == 0) {
         send_http_options(c->fd);
@@ -850,7 +1041,8 @@ static void handle_http_request(mcp_conn_t *c,
         strcmp(path, MCP_PATH_MCP) == 0)
     {
         if (body_len == 0) {
-            send_http_accepted(c->fd);
+            send_http_accepted(c->fd,
+                c->session_id[0] ? c->session_id : NULL);
             conn_close(c);
             return;
         }
@@ -860,6 +1052,11 @@ static void handle_http_request(mcp_conn_t *c,
         memcpy(msg, body, body_len);
         msg[body_len] = '\0';
 
+        MCP_LOG("POST /mcp body: %s",
+                body_len < 512 ? msg : "(>512 bytes, truncated)");
+        if (body_len >= 512)
+            MCP_LOG_RAW("[mcp] body[0:512]=%.512s\n", msg);
+
         c->state  = CONN_HTTP_DONE;
         c->sse_fd = -1;  /* synchronous: respond on same fd */
 
@@ -867,7 +1064,8 @@ static void handle_http_request(mcp_conn_t *c,
         free(msg);
         if (!responded) {
             /* notification – no JSON-RPC response; send HTTP 202 Accepted */
-            send_http_accepted(c->fd);
+            send_http_accepted(c->fd,
+                c->session_id[0] ? c->session_id : NULL);
         }
         conn_close(c);
         return;
@@ -898,7 +1096,8 @@ static void handle_http_request(mcp_conn_t *c,
         strcmp(path, MCP_PATH_MESSAGES) == 0)
     {
         if (body_len == 0) {
-            send_http_accepted(c->fd);
+            send_http_accepted(c->fd,
+                c->session_id[0] ? c->session_id : NULL);
             conn_close(c);
             return;
         }
@@ -916,7 +1115,8 @@ static void handle_http_request(mcp_conn_t *c,
         free(msg);
 
         /* Return 202 to the POST client */
-        send_http_accepted(c->fd);
+        send_http_accepted(c->fd,
+            c->session_id[0] ? c->session_id : NULL);
         conn_close(c);
         return;
     }
@@ -1042,6 +1242,15 @@ int fluxipc_mcp_poll(fluxipc_ctx_t *ctx)
         socklen_t plen = sizeof(peer);
         int cfd = accept(ctx->mcp_fd, (struct sockaddr *)&peer, &plen);
         if (cfd >= 0) {
+            char peer_str[64] = {0};
+            if (peer.ss_family == AF_INET) {
+                struct sockaddr_in *sin = (struct sockaddr_in *)&peer;
+                inet_ntop(AF_INET, &sin->sin_addr, peer_str, sizeof(peer_str));
+            } else if (peer.ss_family == AF_INET6) {
+                struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&peer;
+                inet_ntop(AF_INET6, &sin6->sin6_addr, peer_str, sizeof(peer_str));
+            }
+            MCP_LOG("accept fd=%d from %s", cfd, peer_str[0] ? peer_str : "?");
             int one = 1;
             setsockopt(cfd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
             setsockopt(cfd, SOL_SOCKET,  SO_KEEPALIVE, &one, sizeof(one));

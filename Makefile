@@ -7,6 +7,14 @@ CFLAGS   += -Wall -Wextra -O2 -g \
 LDFLAGS  +=
 LDLIBS   += -lrt -lpthread -lreadline
 
+# ── Debug options ───────────────────────────────────────
+#   make MCP_DEBUG=1          – verbose MCP request/response logging
+#   make debug                – shortcut: full debug build
+MCP_DEBUG ?= 0
+ifeq ($(MCP_DEBUG),1)
+    CFLAGS += -DMCP_DEBUG
+endif
+
 VERSION      ?= 1.0.0
 PREFIX       ?= /usr
 LIBDIR       ?= $(PREFIX)/lib
@@ -37,7 +45,7 @@ TARGET_CLI  := fluxipc-cli
 
 # ── Top-level targets ────────────────────────────────
 
-.PHONY: all clean install uninstall distclean lib static cli examples
+.PHONY: all clean install uninstall distclean lib static cli examples debug
 
 all: lib static cli examples
 
@@ -48,6 +56,9 @@ static: $(TARGET_STATIC)
 cli: $(TARGET_CLI)
 
 examples: example_server
+
+debug:
+	$(MAKE) MCP_DEBUG=1 all
 
 # ── Shared library ───────────────────────────────────
 
