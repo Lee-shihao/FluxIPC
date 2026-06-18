@@ -1,10 +1,10 @@
 {
   "version": "1",
-  "generatedAt": "2026-06-05T02:52:49.724Z",
+  "generatedAt": "2026-06-18T07:51:14.154Z",
   "entries": {
     "/home/leo/workspace/FluxIPC/tests/example_server.c": {
-      "mtime": 1779950035996.6636,
-      "size": 15138,
+      "mtime": 1781769069898.835,
+      "size": 15066,
       "symbols": {
         "purpose": null,
         "exports": [],
@@ -12,7 +12,7 @@
       }
     },
     "/home/leo/workspace/FluxIPC/src/fluxipc_tree.c": {
-      "mtime": 1779345256986.126,
+      "mtime": 1781768212709.6052,
       "size": 6393,
       "symbols": {
         "purpose": null,
@@ -21,7 +21,7 @@
       }
     },
     "/home/leo/workspace/FluxIPC/src/fluxipc_symlink.c": {
-      "mtime": 1780389936205.0583,
+      "mtime": 1781768212707.1274,
       "size": 8112,
       "symbols": {
         "purpose": null,
@@ -30,7 +30,7 @@
       }
     },
     "/home/leo/workspace/FluxIPC/src/fluxipc_sock.c": {
-      "mtime": 1780390357171.7244,
+      "mtime": 1781768212709.9424,
       "size": 8376,
       "symbols": {
         "purpose": null,
@@ -39,7 +39,7 @@
       }
     },
     "/home/leo/workspace/FluxIPC/src/fluxipc_shm.c": {
-      "mtime": 1779345256986.126,
+      "mtime": 1781768212709.7717,
       "size": 5482,
       "symbols": {
         "purpose": null,
@@ -48,7 +48,7 @@
       }
     },
     "/home/leo/workspace/FluxIPC/src/fluxipc_interactive.c": {
-      "mtime": 1780390371159.8123,
+      "mtime": 1781768212708.2632,
       "size": 45720,
       "symbols": {
         "purpose": null,
@@ -57,8 +57,8 @@
       }
     },
     "/home/leo/workspace/FluxIPC/src/fluxipc_core.c": {
-      "mtime": 1780389888688.7458,
-      "size": 8747,
+      "mtime": 1781769028694.4678,
+      "size": 9282,
       "symbols": {
         "purpose": null,
         "exports": [],
@@ -66,8 +66,8 @@
       }
     },
     "/home/leo/workspace/FluxIPC/include/fluxipc_internal.h": {
-      "mtime": 1780318125669.388,
-      "size": 6089,
+      "mtime": 1781768987170.1492,
+      "size": 6557,
       "symbols": {
         "purpose": null,
         "exports": [],
@@ -75,8 +75,8 @@
       }
     },
     "/home/leo/workspace/FluxIPC/include/fluxipc.h": {
-      "mtime": 1780318022611.1765,
-      "size": 7653,
+      "mtime": 1781768976006.0486,
+      "size": 8086,
       "symbols": {
         "purpose": null,
         "exports": [],
@@ -84,12 +84,53 @@
       }
     },
     "/home/leo/workspace/FluxIPC/cli/fluxipc_cli.c": {
-      "mtime": 1780390012013.54,
-      "size": 5511,
+      "mtime": 1781768212710.8718,
+      "size": 5613,
       "symbols": {
         "purpose": null,
         "exports": [],
         "language": "text"
+      }
+    },
+    "/home/leo/workspace/FluxIPC/src/fluxipc_mcp.c": {
+      "mtime": 1781769045190.628,
+      "size": 33978,
+      "symbols": {
+        "purpose": null,
+        "exports": [],
+        "language": "text"
+      }
+    },
+    "/home/leo/workspace/FluxIPC/python/test_mcp.py": {
+      "mtime": 1781768212704.7993,
+      "size": 6616,
+      "symbols": {
+        "purpose": null,
+        "exports": [
+          "ok",
+          "fail",
+          "check",
+          "test_initialize",
+          "test_ping",
+          "test_tools_list",
+          "test_tools_call_basic",
+          "test_tools_call_args",
+          "test_tools_call_stateful",
+          "test_tools_call_errors"
+        ],
+        "language": "python"
+      }
+    },
+    "/home/leo/workspace/FluxIPC/python/fluxipc.py": {
+      "mtime": 1781768212704.6519,
+      "size": 7267,
+      "symbols": {
+        "purpose": null,
+        "exports": [
+          "FluxIPCError",
+          "FluxIPC"
+        ],
+        "language": "python"
       }
     }
   }

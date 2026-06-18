@@ -405,7 +405,7 @@ int main(int argc, char **argv)
     signal(SIGINT,  sig_handler);
     signal(SIGTERM, sig_handler);
 
-    rc = fluxipc_server_init("example_server");
+    rc = fluxipc_server_init("example_server", 32100);
     if (rc < 0) {
         fprintf(stderr, "fluxipc_server_init: %d\n", rc);
         return 1;

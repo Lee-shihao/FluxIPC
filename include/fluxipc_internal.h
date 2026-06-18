@@ -104,7 +104,7 @@ struct fluxipc_node {
 };
 
 /* ─── Global server context ───────────────────────────────────────────────── */
-typedef struct {
+typedef struct fluxipc_ctx_s {
     char              prog_name[FLUXIPC_NAME_MAX];
     char              run_dir[FLUXIPC_PATH_MAX];
     char              sock_path[FLUXIPC_PATH_MAX];
@@ -117,9 +117,15 @@ typedef struct {
     pthread_mutex_t   tree_lock;
     volatile int      running;
     uint32_t          next_id;
-} fluxipc_ctx_t;
+    int               mcp_fd;   /* TCP listener fd; -1 if MCP not started */
+} fluxipc_ctx_t;  /* also known as struct fluxipc_ctx_s */
 
 extern fluxipc_ctx_t *g_ctx;
+
+/* ─── MCP server (internal) ────────────────────────────────────────────────── */
+int  fluxipc_mcp_start(fluxipc_ctx_t *ctx, uint16_t port);
+int  fluxipc_mcp_poll(fluxipc_ctx_t *ctx);
+void fluxipc_mcp_stop(fluxipc_ctx_t *ctx);
 
 /* ─── Internal helpers ────────────────────────────────────────────────────── */
 fluxipc_node_t *tree_find(fluxipc_node_t *root, const char *path);

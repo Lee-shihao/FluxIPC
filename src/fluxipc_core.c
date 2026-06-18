@@ -27,6 +27,7 @@ static fluxipc_ctx_t *ctx_alloc(const char *prog_name)
              "/run/user/%d/%s-fluxipc", getuid(), prog_name);
     ctx->server_fd = -1;
     ctx->shm_fd    = -1;
+    ctx->mcp_fd    = -1;
     ctx->next_id   = 1;
     ctx->running   = 1;
     pthread_mutex_init(&ctx->tree_lock, NULL);
@@ -73,7 +74,7 @@ static void register_static_entries(fluxipc_ctx_t *ctx)
 
 /* ─── fluxipc_server_init ─────────────────────────────────────────────────── */
 
-int fluxipc_server_init(const char *prog_name)
+int fluxipc_server_init(const char *prog_name, uint16_t mcp_port)
 {
     if (g_ctx) return -EALREADY;
 
@@ -105,6 +106,16 @@ int fluxipc_server_init(const char *prog_name)
 
     g_ctx = ctx;
     register_static_entries(ctx);
+
+    /* Start MCP HTTP server if a non-zero port was requested */
+    if (mcp_port > 0) {
+        rc = fluxipc_mcp_start(ctx, mcp_port);
+        if (rc < 0)
+            fprintf(stderr, "fluxipc: MCP start on :%u failed: %d (continuing without MCP)\n",
+                    mcp_port, rc);
+        /* Non-fatal: server works fine without MCP */
+    }
+
     return 0;
 }
 
@@ -187,7 +198,10 @@ int fluxipc_poll(void *unused)
 {
     (void)unused;
     if (!g_ctx || !g_ctx->running) return -EINVAL;
-    return sock_server_poll(g_ctx);
+    int r = sock_server_poll(g_ctx);
+    if (g_ctx->mcp_fd >= 0)
+        fluxipc_mcp_poll(g_ctx);
+    return r;
 }
 
 void fluxipc_stop(void)  { if (g_ctx) g_ctx->running = 0; }
@@ -196,6 +210,7 @@ void fluxipc_destroy(void)
 {
     if (!g_ctx) return;
     fluxipc_ctx_t *ctx = g_ctx; g_ctx = NULL;
+    fluxipc_mcp_stop(ctx);
     sock_server_close(ctx);
     shm_close(ctx);
     symlink_remove_all(ctx->run_dir);

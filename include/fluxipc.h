@@ -94,7 +94,18 @@ fluxipc_node_t *fluxipc_register(const char         *path,
 void fluxipc_unregister(fluxipc_node_t *node);
 
 /* ─── Lifecycle ───────────────────────────────────────────────────────────── */
-int  fluxipc_server_init(const char *prog_name);
+
+/**
+ * Initialise a FluxIPC server.
+ *
+ * Creates the Unix socket, POSIX shared-memory registry, symlink tree,
+ * and registers all compile-time FLUXIPC_STATIC entries.
+ *
+ * @param prog_name  Unique short name for this server (used in socket/shm paths).
+ * @param mcp_port   TCP port for the MCP HTTP server, or 0 to disable.
+ * @return 0 on success, negative errno on failure (-EALREADY if already init'd).
+ */
+int  fluxipc_server_init(const char *prog_name, uint16_t mcp_port);
 int  fluxipc_interactive_init(const char *prog_name);
 
 /* ─── Event loop ──────────────────────────────────────────────────────────── */
