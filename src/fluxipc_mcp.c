@@ -321,6 +321,24 @@ static void send_http_sse_headers(int fd)
 }
 
 /*
+ * send_http_head_ok – 200 OK with headers only (no body), used for HEAD /mcp
+ * and HEAD /sse.  Returns the same Content-Type as a GET would.
+ */
+static void send_http_head_ok(int fd, const char *content_type)
+{
+    char hdr[256];
+    int hlen = snprintf(hdr, sizeof(hdr),
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: %s\r\n"
+        "Cache-Control: no-cache\r\n"
+        "Access-Control-Allow-Origin: *\r\n"
+        "Connection: close\r\n"
+        "\r\n",
+        content_type);
+    send_all(fd, hdr, (size_t)hlen);
+}
+
+/*
  * send_http_not_found – 404 for unknown paths.
  */
 static void send_http_not_found(int fd)
@@ -474,7 +492,13 @@ static void handle_tools_list(mcp_conn_t *c, const char *id,
     size_t used = 0;
     /* Build result inline; we'll wrap it in build_result after */
     char *result = malloc(MCP_WRITE_BUF);
-    if (!result) { free(buf); return; }
+    if (!result) {
+        char err[128];
+        size_t elen = build_error(err, sizeof(err), id, -32603, "out of memory");
+        deliver_response(c, err, elen);
+        free(buf);
+        return;
+    }
     size_t rused = 0;
 
     BUF_APPEND(result, MCP_WRITE_BUF, rused, "{\"tools\":[");
@@ -586,11 +610,24 @@ static void handle_tools_call(mcp_conn_t *c, const char *id,
     /* Build result: {"content":[{"type":"text","text":"..."}],"isError":<bool>} */
     char   *resp = malloc(MCP_WRITE_BUF);
     size_t  used = 0;
-    if (!resp) { free(out_buf); return; }
+    if (!resp) {
+        char err[128];
+        size_t elen = build_error(err, sizeof(err), id, -32603, "out of memory");
+        deliver_response(c, err, elen);
+        free(out_buf);
+        return;
+    }
 
     char *result = malloc(MCP_WRITE_BUF / 2);
     size_t rused = 0;
-    if (!result) { free(out_buf); free(resp); return; }
+    if (!result) {
+        char err[128];
+        size_t elen = build_error(err, sizeof(err), id, -32603, "out of memory");
+        deliver_response(c, err, elen);
+        free(out_buf);
+        free(resp);
+        return;
+    }
 
     BUF_APPEND(result, MCP_WRITE_BUF / 2, rused,
                "{\"content\":[{\"type\":\"text\",\"text\":\"");
@@ -609,7 +646,10 @@ static void handle_tools_call(mcp_conn_t *c, const char *id,
 
 /* ── JSON-RPC dispatch ──────────────────────────────────────────────────── */
 
-static void dispatch_jsonrpc(mcp_conn_t *c, char *body, fluxipc_ctx_t *ctx)
+/* Returns 1 if a JSON-RPC response was delivered, 0 if this was a
+ * notification (no id) and no response should be sent.  Callers use this
+ * to know whether they must send an HTTP 202 Accepted for the POST. */
+static int dispatch_jsonrpc(mcp_conn_t *c, char *body, fluxipc_ctx_t *ctx)
 {
     char id[64];
     int has_id = js_id(body, id, sizeof(id));
@@ -622,30 +662,38 @@ static void dispatch_jsonrpc(mcp_conn_t *c, char *body, fluxipc_ctx_t *ctx)
             size_t elen = build_error(err, sizeof(err), id, -32600,
                                       "missing method");
             deliver_response(c, err, elen);
+            return 1;
         }
-        return;
+        return 0;  /* notification without method – ignore */
     }
 
     if (strcmp(method, "initialize") == 0) {
         const char *params = strstr(body, "\"params\"");
         handle_initialize(c, id, params ? params : body);
+        return 1;
     } else if (strcmp(method, "notifications/initialized") == 0 ||
                strcmp(method, "notifications/cancelled") == 0) {
-        /* notifications: no response */
+        /* notifications: no JSON-RPC response */
+        return 0;
     } else if (strcmp(method, "ping") == 0) {
         handle_ping(c, id);
+        return 1;
     } else if (strcmp(method, "tools/list") == 0) {
         handle_tools_list(c, id, ctx);
+        return 1;
     } else if (strcmp(method, "tools/call") == 0) {
         const char *params = strstr(body, "\"params\"");
         handle_tools_call(c, id, params ? params : body, ctx);
+        return 1;
     } else {
         if (has_id) {
             char err[128];
             size_t elen = build_error(err, sizeof(err), id, -32601,
                                       "method not found");
             deliver_response(c, err, elen);
+            return 1;
         }
+        return 0;
     }
 }
 
@@ -784,6 +832,19 @@ static void handle_http_request(mcp_conn_t *c,
         return;
     }
 
+    /* ── HEAD (health / probing) ── */
+    if (strcmp(method, "HEAD") == 0) {
+        if (strcmp(path, MCP_PATH_MCP) == 0 ||
+            strcmp(path, MCP_PATH_SSE) == 0)
+        {
+            send_http_head_ok(c->fd, "text/event-stream");
+        } else {
+            send_http_not_found(c->fd);
+        }
+        conn_close(c);
+        return;
+    }
+
     /* ── Streamable HTTP: POST /mcp ── */
     if (strcmp(method, "POST") == 0 &&
         strcmp(path, MCP_PATH_MCP) == 0)
@@ -802,8 +863,12 @@ static void handle_http_request(mcp_conn_t *c,
         c->state  = CONN_HTTP_DONE;
         c->sse_fd = -1;  /* synchronous: respond on same fd */
 
-        dispatch_jsonrpc(c, msg, ctx);
+        int responded = dispatch_jsonrpc(c, msg, ctx);
         free(msg);
+        if (!responded) {
+            /* notification – no JSON-RPC response; send HTTP 202 Accepted */
+            send_http_accepted(c->fd);
+        }
         conn_close(c);
         return;
     }

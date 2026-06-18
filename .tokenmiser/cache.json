@@ -1,6 +1,6 @@
 {
   "version": "1",
-  "generatedAt": "2026-06-18T07:51:14.154Z",
+  "generatedAt": "2026-06-18T10:05:51.270Z",
   "entries": {
     "/home/leo/workspace/FluxIPC/tests/example_server.c": {
       "mtime": 1781769069898.835,
@@ -93,8 +93,8 @@
       }
     },
     "/home/leo/workspace/FluxIPC/src/fluxipc_mcp.c": {
-      "mtime": 1781769045190.628,
-      "size": 33978,
+      "mtime": 1781777150441.7612,
+      "size": 35968,
       "symbols": {
         "purpose": null,
         "exports": [],
