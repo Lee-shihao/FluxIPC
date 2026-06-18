@@ -52,9 +52,11 @@ class FluxIPC:
 
     def __init__(self, host: str = "localhost", port: int = 32100,
                  timeout: float = 10.0) -> None:
-        self._host    = host
-        self._port    = port
-        self._timeout = timeout
+        self._host         = host
+        self._port         = port
+        self._timeout      = timeout
+        self._session_id   = None   # set after initialize
+        self._proto_ver    = "2025-03-26"  # will be negotiated
         self._initialize()
 
     # ── connection management ────────────────────────────────────────────── #
@@ -79,18 +81,21 @@ class FluxIPC:
 
     def _http_post(self, body: bytes) -> bytes:
         """POST body to /mcp, return the response body bytes."""
-        req = (
+        headers = (
             f"POST /mcp HTTP/1.1\r\n"
             f"Host: {self._host}:{self._port}\r\n"
             f"Content-Type: application/json\r\n"
             f"Accept: application/json, text/event-stream\r\n"
             f"Content-Length: {len(body)}\r\n"
-            f"Connection: close\r\n"
-            f"\r\n"
-        ).encode() + body
+        )
+        if self._session_id:
+            headers += f"Mcp-Session-Id: {self._session_id}\r\n"
+        if self._proto_ver:
+            headers += f"Mcp-Protocol-Version: {self._proto_ver}\r\n"
+        headers += "Connection: close\r\n\r\n"
 
         with self._connect() as s:
-            s.sendall(req)
+            s.sendall(headers.encode() + body)
             resp = b""
             while True:
                 chunk = s.recv(65536)
@@ -100,11 +105,12 @@ class FluxIPC:
 
         return self._parse_http_response(resp)
 
-    @staticmethod
-    def _parse_http_response(raw: bytes) -> bytes:
+    def _parse_http_response(self, raw: bytes) -> bytes:
         """Extract body from a raw HTTP/1.1 response.
 
         Returns the body bytes, which may be empty for 202 responses.
+        Also extracts Mcp-Session-Id from response headers for session
+        management.
         """
         # Server closed connection before sending any bytes (notification ACK)
         if not raw:
@@ -117,12 +123,20 @@ class FluxIPC:
                 return b""
             raise ConnectionError("malformed HTTP response")
 
-        headers = raw[:sep].decode(errors="replace")
-        body    = raw[sep + 4:]
+        headers_text = raw[:sep].decode(errors="replace")
+        body         = raw[sep + 4:]
 
-        status_line = headers.splitlines()[0]
+        status_line = headers_text.splitlines()[0]
         if not status_line.startswith("HTTP/1.1 2"):
             raise ConnectionError(f"HTTP error: {status_line}")
+
+        # Extract Mcp-Session-Id from response headers (case-insensitive)
+        for line in headers_text.splitlines():
+            if line.lower().startswith("mcp-session-id:"):
+                sid = line.split(":", 1)[1].strip()
+                if sid:
+                    self._session_id = sid
+                    break
 
         return body
 
@@ -159,12 +173,15 @@ class FluxIPC:
     # ── MCP handshake ────────────────────────────────────────────────────── #
 
     def _initialize(self) -> None:
-        self._call_rpc(
+        result = self._call_rpc(
             "initialize",
-            protocolVersion="2025-03-26",
+            protocolVersion=self._proto_ver,
             capabilities={},
             clientInfo={"name": "fluxipc.py", "version": "1.0.0"},
         )
+        # Accept the server's protocol version
+        if result and "protocolVersion" in result:
+            self._proto_ver = result["protocolVersion"]
         self._notify("notifications/initialized")
 
     # ── public API ───────────────────────────────────────────────────────── #

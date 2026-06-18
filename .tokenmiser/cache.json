@@ -1,9 +1,9 @@
 {
   "version": "1",
-  "generatedAt": "2026-06-18T07:51:14.154Z",
+  "generatedAt": "2026-06-18T10:32:25.777Z",
   "entries": {
     "/home/leo/workspace/FluxIPC/tests/example_server.c": {
-      "mtime": 1781769069898.835,
+      "mtime": 1781778744977.858,
       "size": 15066,
       "symbols": {
         "purpose": null,
@@ -93,8 +93,8 @@
       }
     },
     "/home/leo/workspace/FluxIPC/src/fluxipc_mcp.c": {
-      "mtime": 1781769045190.628,
-      "size": 33978,
+      "mtime": 1781778536375.9294,
+      "size": 44130,
       "symbols": {
         "purpose": null,
         "exports": [],
@@ -122,8 +122,8 @@
       }
     },
     "/home/leo/workspace/FluxIPC/python/fluxipc.py": {
-      "mtime": 1781768212704.6519,
-      "size": 7267,
+      "mtime": 1781778648111.707,
+      "size": 8181,
       "symbols": {
         "purpose": null,
         "exports": [
