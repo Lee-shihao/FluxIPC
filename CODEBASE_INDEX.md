@@ -1,5 +1,5 @@
 # Codebase Index
-> 2026-06-05 · 20 files · ~44.0k tokens total
+> 2026-06-18 · 23 files · ~60.3k tokens total
 >
 > **How to use:** Read this file first. Navigate to the exact file you need,
 > then read only that file. Do not read entire directories.
@@ -13,9 +13,14 @@
 - `fluxipc_internal.h`
 - `fluxipc.h`
 
+**python/**
+- `fluxipc.py` — FluxIPCError, FluxIPC
+- `test_mcp.py` — ok, fail, check, test_initialize, test_ping, test_tools_list, test_tools_call_basic, test_tools_call_args +2
+
 **src/**
 - `fluxipc_core.c`
 - `fluxipc_interactive.c`
+- `fluxipc_mcp.c`
 - `fluxipc_shm.c`
 - `fluxipc_sock.c`
 - `fluxipc_symlink.c`
@@ -30,8 +35,8 @@
 ## Docs
 - `CLAUDE.md`
 - `CODEBASE_INDEX.md`
-- `FluxIPC_CSDN博客.md`
+- `FluxIPC_CSDN.md`
 - `README.md`
 
 ---
-*Index: ~165 tokens · Full codebase: ~44.0k tokens · Saves ~100%*
+*Index: ~221 tokens · Full codebase: ~60.3k tokens · Saves ~100%*

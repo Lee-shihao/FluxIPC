@@ -21,7 +21,8 @@ LIB_SRCS := src/fluxipc_core.c \
             src/fluxipc_shm.c  \
             src/fluxipc_sock.c \
             src/fluxipc_symlink.c \
-            src/fluxipc_interactive.c
+            src/fluxipc_interactive.c \
+            src/fluxipc_mcp.c
 
 CLI_SRCS := cli/fluxipc_cli.c $(LIB_SRCS)
 

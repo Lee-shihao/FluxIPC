@@ -3,7 +3,7 @@ build/
 fluxipc-cli
 example_server
 example_client
-
+__pycache__/
 fluxipc.pc
 
 # Compiled objects and libraries
