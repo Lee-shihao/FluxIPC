@@ -72,3 +72,14 @@ junit.xml
 *.wasm
 *.mp4
 *.mp3
+
+# ── Graphify ───────────────────────────────────────────────────────────────
+graphify-out/cache/
+graphify-out/cost.json
+graphify-out/*.log
+graphify-out/graph.html
+graphify-out/*.json
+graphify-out/.graphify_*.json
+graphify-out/graphify_python
+graphify-out/.graphify_root
+graphify-out/GRAPH_REPORT.md

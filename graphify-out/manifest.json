@@ -1,0 +1,102 @@
+{
+  "/home/leo/workspace/FluxIPC/.claude/settings.json": {
+    "mtime": 1780627969.7205832,
+    "ast_hash": "a9b9ff147e180a330654527ca8ecb38d",
+    "semantic_hash": "a9b9ff147e180a330654527ca8ecb38d"
+  },
+  "/home/leo/workspace/FluxIPC/.tokenmiser/cache.json": {
+    "mtime": 1781778745.7739944,
+    "ast_hash": "7e96d4ea2bce1c027cc7d86392d51c77",
+    "semantic_hash": "7e96d4ea2bce1c027cc7d86392d51c77"
+  },
+  "/home/leo/workspace/FluxIPC/cli/fluxipc_cli.c": {
+    "mtime": 1781768212.7108717,
+    "ast_hash": "93be860f70bbbe4cc47e4409049717c4",
+    "semantic_hash": "93be860f70bbbe4cc47e4409049717c4"
+  },
+  "/home/leo/workspace/FluxIPC/include/fluxipc.h": {
+    "mtime": 1781768976.0060484,
+    "ast_hash": "9e2ff96d9f9a053641dc3cd77bed93f3",
+    "semantic_hash": "9e2ff96d9f9a053641dc3cd77bed93f3"
+  },
+  "/home/leo/workspace/FluxIPC/include/fluxipc_internal.h": {
+    "mtime": 1781768987.170149,
+    "ast_hash": "d411cb04aad9c20664c21991dc74db39",
+    "semantic_hash": "d411cb04aad9c20664c21991dc74db39"
+  },
+  "/home/leo/workspace/FluxIPC/packaging/install.sh": {
+    "mtime": 1781765797.7943523,
+    "ast_hash": "ac77bfc19235cef2293a1e458fd51812",
+    "semantic_hash": "ac77bfc19235cef2293a1e458fd51812"
+  },
+  "/home/leo/workspace/FluxIPC/python/fluxipc.py": {
+    "mtime": 1781778648.1117072,
+    "ast_hash": "b35c7a9af0ca1ff224fb4a40fcb55e21",
+    "semantic_hash": "b35c7a9af0ca1ff224fb4a40fcb55e21"
+  },
+  "/home/leo/workspace/FluxIPC/python/test_mcp.py": {
+    "mtime": 1781768212.7047994,
+    "ast_hash": "4da488bbc0e724d2fa7b15dc1a45c4d4",
+    "semantic_hash": "4da488bbc0e724d2fa7b15dc1a45c4d4"
+  },
+  "/home/leo/workspace/FluxIPC/src/fluxipc_core.c": {
+    "mtime": 1781769028.6944678,
+    "ast_hash": "83cda26e5b09378aa6752dfd78322e09",
+    "semantic_hash": "83cda26e5b09378aa6752dfd78322e09"
+  },
+  "/home/leo/workspace/FluxIPC/src/fluxipc_interactive.c": {
+    "mtime": 1781768212.7082632,
+    "ast_hash": "77f308451d7593ef7deb0d2256a13cef",
+    "semantic_hash": "77f308451d7593ef7deb0d2256a13cef"
+  },
+  "/home/leo/workspace/FluxIPC/src/fluxipc_mcp.c": {
+    "mtime": 1781778536.3759294,
+    "ast_hash": "584d9b2047dc8ca9ec96d76dbe189d6e",
+    "semantic_hash": "584d9b2047dc8ca9ec96d76dbe189d6e"
+  },
+  "/home/leo/workspace/FluxIPC/src/fluxipc_shm.c": {
+    "mtime": 1781768212.7097716,
+    "ast_hash": "820dd33d6b29db4af2d9b73170e64065",
+    "semantic_hash": "820dd33d6b29db4af2d9b73170e64065"
+  },
+  "/home/leo/workspace/FluxIPC/src/fluxipc_sock.c": {
+    "mtime": 1781768212.7099423,
+    "ast_hash": "ee30e03f4bc3c257156d955fc1b7e98f",
+    "semantic_hash": "ee30e03f4bc3c257156d955fc1b7e98f"
+  },
+  "/home/leo/workspace/FluxIPC/src/fluxipc_symlink.c": {
+    "mtime": 1781768212.7071276,
+    "ast_hash": "7834e47b61bc86530e21aaee5aa34a9b",
+    "semantic_hash": "7834e47b61bc86530e21aaee5aa34a9b"
+  },
+  "/home/leo/workspace/FluxIPC/src/fluxipc_tree.c": {
+    "mtime": 1781768212.7096052,
+    "ast_hash": "076155f44c193c4fef0bb4adb0a55ed5",
+    "semantic_hash": "076155f44c193c4fef0bb4adb0a55ed5"
+  },
+  "/home/leo/workspace/FluxIPC/tests/example_server.c": {
+    "mtime": 1781778744.977858,
+    "ast_hash": "b3bf9a487a0940fbbdcef44c9f90b0c0",
+    "semantic_hash": "b3bf9a487a0940fbbdcef44c9f90b0c0"
+  },
+  "/home/leo/workspace/FluxIPC/CLAUDE.md": {
+    "mtime": 1782098463.0821705,
+    "ast_hash": "c12ea6c1175f58bf405a67dc70adba45",
+    "semantic_hash": "c12ea6c1175f58bf405a67dc70adba45"
+  },
+  "/home/leo/workspace/FluxIPC/CODEBASE_INDEX.md": {
+    "mtime": 1782109373.989809,
+    "ast_hash": "6655ab7cb0629bd301f3a7defc33b219",
+    "semantic_hash": "6655ab7cb0629bd301f3a7defc33b219"
+  },
+  "/home/leo/workspace/FluxIPC/FluxIPC_CSDN.md": {
+    "mtime": 1781769206.2079453,
+    "ast_hash": "f8e8a19e3ce3b1a0a9e0e935d3c57151",
+    "semantic_hash": "f8e8a19e3ce3b1a0a9e0e935d3c57151"
+  },
+  "/home/leo/workspace/FluxIPC/README.md": {
+    "mtime": 1781769218.4480498,
+    "ast_hash": "cb90d482e531b2b4553d0024cf8e6f10",
+    "semantic_hash": "cb90d482e531b2b4553d0024cf8e6f10"
+  }
+}
