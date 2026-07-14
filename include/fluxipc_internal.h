@@ -118,6 +118,11 @@ typedef struct fluxipc_ctx_s {
     volatile int      running;
     uint32_t          next_id;
     int               mcp_fd;   /* TCP listener fd; -1 if MCP not started */
+
+    /* Global request observation hooks (see fluxipc_set_request_hooks) */
+    fluxipc_request_hook_fn pre_hook;
+    fluxipc_request_hook_fn post_hook;
+    void                   *hook_user;
 } fluxipc_ctx_t;  /* also known as struct fluxipc_ctx_s */
 
 extern fluxipc_ctx_t *g_ctx;

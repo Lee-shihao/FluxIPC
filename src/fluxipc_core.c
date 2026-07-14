@@ -119,6 +119,17 @@ int fluxipc_server_init(const char *prog_name, uint16_t mcp_port)
     return 0;
 }
 
+/* ─── fluxipc_set_request_hooks ────────────────────────────────────────────── */
+
+void fluxipc_set_request_hooks(fluxipc_request_hook_fn pre,
+                               fluxipc_request_hook_fn post, void *user)
+{
+    if (!g_ctx) return;
+    g_ctx->pre_hook  = pre;
+    g_ctx->post_hook = post;
+    g_ctx->hook_user = user;
+}
+
 /* ─── fluxipc_client_dispatch ──────────────────────────────────────────────── */
 
 int fluxipc_client_dispatch(int argc, char **argv)

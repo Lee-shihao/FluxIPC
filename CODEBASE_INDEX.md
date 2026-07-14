@@ -1,5 +1,5 @@
 # Codebase Index
-> 2026-06-18 · 23 files · ~63.5k tokens total
+> 2026-06-22 · 23 files · ~65.0k tokens total
 >
 > **How to use:** Read this file first. Navigate to the exact file you need,
 > then read only that file. Do not read entire directories.
@@ -39,4 +39,4 @@
 - `README.md`
 
 ---
-*Index: ~221 tokens · Full codebase: ~63.5k tokens · Saves ~100%*
+*Index: ~221 tokens · Full codebase: ~65.0k tokens · Saves ~100%*
