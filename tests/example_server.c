@@ -393,6 +393,24 @@ static volatile int g_quit = 0;
 static void sig_handler(int s) { (void)s; g_quit = 1; fluxipc_stop(); }
 
 /* ==========================================================================
+ *  Request observation hooks (demo)
+ * ========================================================================== */
+
+static void req_pre_hook(const fluxipc_request_t *req, void *user)
+{
+    (void)user;
+    printf("[hook:pre ] path=%s argc=%d matched=%d\n",
+           req->path, req->argc, req->matched);
+}
+
+static void req_post_hook(const fluxipc_request_t *req, void *user)
+{
+    (void)user;
+    printf("[hook:post] path=%s status=%d out_len=%zu\n",
+           req->path, req->status, req->out_len);
+}
+
+/* ==========================================================================
  *  main
  * ========================================================================== */
 
@@ -413,6 +431,9 @@ int main(int argc, char **argv)
 
     printf("[server] started – socket: "
            "/run/example_server-fluxipc/example_server.sock\n");
+
+    /* Observe every request before/after its handler runs */
+    fluxipc_set_request_hooks(req_pre_hook, req_post_hook, NULL);
 
     /* Register dynamic per-device endpoints */
     register_device("/devices/stub/primary",   "stub-primary",   100,   0, 255);

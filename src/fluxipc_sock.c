@@ -146,14 +146,33 @@ static void handle_client(fluxipc_ctx_t *ctx, int cfd)
     char *out_buf = malloc(RESP_BUF_SZ);
     if (!out_buf) {
         resp.status = -ENOMEM; resp.data_len = 0;
-    } else if (!node || !node->handler) {
-        resp.status = -ENOENT; resp.data_len = 0;
     } else {
+        fluxipc_request_t rq = {
+            .path    = req.path,
+            .argc    = argc,
+            .argv    = argv_ptrs,
+            .matched = (node && node->handler) ? 1 : 0,
+            .status  = 0,
+            .out_buf = NULL,
+            .out_len = 0,
+            .data    = node ? node->data : NULL,
+        };
+
+        if (ctx->pre_hook) ctx->pre_hook(&rq, ctx->hook_user);
+
         size_t out_len = 0;
-        int rc = node->handler(node->data, argc, argv_ptrs,
-                               out_buf, RESP_BUF_SZ, &out_len);
-        resp.status   = rc;
-        resp.data_len = (rc == 0) ? (uint32_t)out_len : 0;
+        if (rq.matched)
+            rq.status = node->handler(node->data, argc, argv_ptrs,
+                                      out_buf, RESP_BUF_SZ, &out_len);
+        else
+            rq.status = -ENOENT;
+
+        rq.out_len = (rq.status == 0) ? out_len : 0;
+        rq.out_buf = out_buf;
+        if (ctx->post_hook) ctx->post_hook(&rq, ctx->hook_user);
+
+        resp.status   = rq.status;
+        resp.data_len = (uint32_t)rq.out_len;
     }
 
     send_all(cfd, &resp, sizeof(resp));

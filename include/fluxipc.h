@@ -118,6 +118,39 @@ void fluxipc_destroy(void);
 /* ─── Help ────────────────────────────────────────────────────────────────── */
 void fluxipc_usage(const char *prog);
 
+/* ─── Server request hooks (observation only) ─────────────────────────────── */
+
+/** Read-only view of one incoming request, passed to the pre/post hooks. */
+typedef struct {
+    const char        *path;    /* IPC path invoked */
+    int                argc;
+    char       *const *argv;    /* argv[0..argc-1]; argv[0] == last path component */
+    int                matched; /* 1 if an endpoint handler was found for path */
+    int                status;  /* handler return code — valid in POST hook only */
+    const void        *out_buf; /* response bytes — valid in POST hook only */
+    size_t             out_len; /* response length — valid in POST hook only */
+    void              *data;    /* endpoint context (node->data); NULL if unmatched */
+} fluxipc_request_t;
+
+/**
+ * Observation hook. Called once before the handler runs (pre) and once after it
+ * runs, before the response is sent (post). It cannot alter the response and
+ * must not block; it is intended for logging, auditing, and metrics.
+ *
+ * In the PRE hook, @p req->status / out_buf / out_len are not yet meaningful.
+ * In the POST hook, they reflect the handler's actual result.
+ */
+typedef void (*fluxipc_request_hook_fn)(const fluxipc_request_t *req, void *user);
+
+/**
+ * Register global pre/post request hooks. Either may be NULL.
+ * Must be called after fluxipc_server_init(). @p user is passed through to
+ * both hooks. Calling again replaces the previous hooks.
+ */
+void fluxipc_set_request_hooks(fluxipc_request_hook_fn pre,
+                               fluxipc_request_hook_fn post,
+                               void                   *user);
+
 /* ─── Client API ────────────────────────────────────────────────────────────── */
 
 /** Callback for fluxipc_list_endpoints: receives one active endpoint. */
