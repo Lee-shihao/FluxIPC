@@ -75,8 +75,8 @@
     "semantic_hash": "f8e8a19e3ce3b1a0a9e0e935d3c57151"
   },
   "README.md": {
-    "mtime": 1792150293.2371826,
-    "ast_hash": "737896c0b7a240b910d39be7b6381b9d",
+    "mtime": 1792152242.2625818,
+    "ast_hash": "c558cd5a40837e9129c88b5129e2be0a",
     "semantic_hash": ""
   },
   "python/test_http.py": {
@@ -210,8 +210,8 @@
     "semantic_hash": ""
   },
   "README.zh-CN.md": {
-    "mtime": 1792150293.2391672,
-    "ast_hash": "1c8256beac1b0aca895823a0f63a6bfa",
+    "mtime": 1792152242.2655208,
+    "ast_hash": "147b5b662c3a5dc93823daf7e10a2407",
     "semantic_hash": ""
   },
   "mull.yml": {

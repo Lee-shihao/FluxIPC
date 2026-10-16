@@ -833,7 +833,7 @@
       "source_location": "L273",
       "_origin": "ast",
       "id": "src_fluxipc_core_fluxipc_static_add",
-      "community": 20,
+      "community": 0,
       "norm_label": "fluxipc_static_add()"
     },
     {
@@ -843,7 +843,7 @@
       "source_location": "L273",
       "_origin": "ast",
       "id": "fluxipc_entry_t",
-      "community": 20,
+      "community": 0,
       "norm_label": "fluxipc_entry_t"
     },
     {
@@ -1003,7 +1003,7 @@
       "source_location": "L458",
       "_origin": "ast",
       "id": "src_fluxipc_core_fluxipc_dispatch_ipc",
-      "community": 17,
+      "community": 0,
       "norm_label": "fluxipc_dispatch_ipc()"
     },
     {
@@ -1043,7 +1043,7 @@
       "source_location": "L527",
       "_origin": "ast",
       "id": "src_fluxipc_core_fluxipc_set_request_hooks",
-      "community": 20,
+      "community": 0,
       "norm_label": "fluxipc_set_request_hooks()"
     },
     {
@@ -1053,7 +1053,7 @@
       "source_location": "L527",
       "_origin": "ast",
       "id": "fluxipc_request_hook_fn",
-      "community": 20,
+      "community": 0,
       "norm_label": "fluxipc_request_hook_fn"
     },
     {
@@ -1513,7 +1513,7 @@
       "source_location": "L272",
       "_origin": "ast",
       "id": "src_fluxipc_interactive_load_local_leaf_cb",
-      "community": 0,
+      "community": 2,
       "norm_label": "load_local_leaf_cb()"
     },
     {
@@ -1523,7 +1523,7 @@
       "source_location": "L272",
       "_origin": "ast",
       "id": "src_fluxipc_interactive_c_fluxipc_node_t",
-      "community": 0,
+      "community": 2,
       "norm_label": "fluxipc_node_t"
     },
     {
@@ -1833,7 +1833,7 @@
       "source_location": "L83",
       "_origin": "ast",
       "id": "src_fluxipc_sock_send_unix_response",
-      "community": 17,
+      "community": 1,
       "norm_label": "send_unix_response()"
     },
     {
@@ -1843,7 +1843,7 @@
       "source_location": "L83",
       "_origin": "ast",
       "id": "src_fluxipc_sock_c_fluxipc_conn_t",
-      "community": 17,
+      "community": 1,
       "norm_label": "fluxipc_conn_t"
     },
     {
@@ -2593,7 +2593,7 @@
       "source_location": "L598",
       "_origin": "ast",
       "id": "tests_example_server_register_device",
-      "community": 20,
+      "community": 0,
       "norm_label": "register_device()"
     },
     {
@@ -2633,7 +2633,7 @@
       "source_location": "L660",
       "_origin": "ast",
       "id": "tests_example_server_register_endpoints",
-      "community": 20,
+      "community": 0,
       "norm_label": "register_endpoints()"
     },
     {
@@ -2663,7 +2663,7 @@
       "source_location": "L731",
       "_origin": "ast",
       "id": "tests_example_server_main",
-      "community": 20,
+      "community": 0,
       "norm_label": "main()"
     },
     {
@@ -3273,7 +3273,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "unit_test_core",
-      "community": 20,
+      "community": 17,
       "norm_label": "test_core.c"
     },
     {
@@ -3303,7 +3303,7 @@
       "source_location": "L40",
       "_origin": "ast",
       "id": "unit_test_core_ipc_handler",
-      "community": 20,
+      "community": 17,
       "norm_label": "ipc_handler()"
     },
     {
@@ -3313,7 +3313,7 @@
       "source_location": "L52",
       "_origin": "ast",
       "id": "unit_test_core_http_handler",
-      "community": 20,
+      "community": 19,
       "norm_label": "http_handler()"
     },
     {
@@ -3323,7 +3323,7 @@
       "source_location": "L52",
       "_origin": "ast",
       "id": "tests_unit_test_core_c_fluxipc_http_request_t",
-      "community": 20,
+      "community": 19,
       "norm_label": "fluxipc_http_request_t"
     },
     {
@@ -3333,7 +3333,7 @@
       "source_location": "L52",
       "_origin": "ast",
       "id": "tests_unit_test_core_c_fluxipc_http_response_t",
-      "community": 20,
+      "community": 19,
       "norm_label": "fluxipc_http_response_t"
     },
     {
@@ -3343,7 +3343,7 @@
       "source_location": "L65",
       "_origin": "ast",
       "id": "unit_test_core_ipc_handler2",
-      "community": 20,
+      "community": 17,
       "norm_label": "ipc_handler2()"
     },
     {
@@ -3353,7 +3353,7 @@
       "source_location": "L68",
       "_origin": "ast",
       "id": "unit_test_core_http_handler2",
-      "community": 20,
+      "community": 19,
       "norm_label": "http_handler2()"
     },
     {
@@ -3363,7 +3363,7 @@
       "source_location": "L72",
       "_origin": "ast",
       "id": "unit_test_core_find_leaf_named",
-      "community": 20,
+      "community": 17,
       "norm_label": "find_leaf_named()"
     },
     {
@@ -3373,7 +3373,7 @@
       "source_location": "L72",
       "_origin": "ast",
       "id": "tests_unit_test_core_c_cjson",
-      "community": 20,
+      "community": 17,
       "norm_label": "cjson"
     },
     {
@@ -3383,7 +3383,7 @@
       "source_location": "L84",
       "_origin": "ast",
       "id": "unit_test_core_count_cb",
-      "community": 20,
+      "community": 17,
       "norm_label": "count_cb()"
     },
     {
@@ -3393,7 +3393,7 @@
       "source_location": "L84",
       "_origin": "ast",
       "id": "tests_unit_test_core_c_fluxipc_node_t",
-      "community": 20,
+      "community": 17,
       "norm_label": "fluxipc_node_t"
     },
     {
@@ -3403,7 +3403,7 @@
       "source_location": "L91",
       "_origin": "ast",
       "id": "unit_test_core_stop_cb",
-      "community": 20,
+      "community": 17,
       "norm_label": "stop_cb()"
     },
     {
@@ -3413,7 +3413,7 @@
       "source_location": "L101",
       "_origin": "ast",
       "id": "unit_test_core_pre_hook",
-      "community": 20,
+      "community": 17,
       "norm_label": "pre_hook()"
     },
     {
@@ -3423,7 +3423,7 @@
       "source_location": "L101",
       "_origin": "ast",
       "id": "tests_unit_test_core_c_fluxipc_event_t",
-      "community": 20,
+      "community": 17,
       "norm_label": "fluxipc_event_t"
     },
     {
@@ -3433,7 +3433,7 @@
       "source_location": "L108",
       "_origin": "ast",
       "id": "unit_test_core_post_hook",
-      "community": 20,
+      "community": 17,
       "norm_label": "post_hook()"
     },
     {
@@ -3493,7 +3493,7 @@
       "source_location": "L215",
       "_origin": "ast",
       "id": "unit_test_core_test_socket_file_permissions",
-      "community": 20,
+      "community": 17,
       "norm_label": "test_socket_file_permissions()"
     },
     {
@@ -3563,7 +3563,7 @@
       "source_location": "L528",
       "_origin": "ast",
       "id": "unit_test_core_test_static_add_null",
-      "community": 20,
+      "community": 0,
       "norm_label": "test_static_add_null()"
     },
     {
@@ -3573,7 +3573,7 @@
       "source_location": "L534",
       "_origin": "ast",
       "id": "unit_test_core_test_noregistration_without_ctx",
-      "community": 0,
+      "community": 17,
       "norm_label": "test_noregistration_without_ctx()"
     },
     {
@@ -3593,7 +3593,7 @@
       "source_location": "L571",
       "_origin": "ast",
       "id": "unit_test_core_test_remove_middle_sibling",
-      "community": 0,
+      "community": 17,
       "norm_label": "test_remove_middle_sibling()"
     },
     {
@@ -3603,7 +3603,7 @@
       "source_location": "L587",
       "_origin": "ast",
       "id": "unit_test_core_test_manifest_all_methods",
-      "community": 20,
+      "community": 17,
       "norm_label": "test_manifest_all_methods()"
     },
     {
@@ -3633,7 +3633,7 @@
       "source_location": "L646",
       "_origin": "ast",
       "id": "unit_test_core_test_node_leaves_without_ctx",
-      "community": 20,
+      "community": 0,
       "norm_label": "test_node_leaves_without_ctx()"
     },
     {
@@ -3723,7 +3723,7 @@
       "source_location": "L891",
       "_origin": "ast",
       "id": "unit_test_core_list_cb",
-      "community": 20,
+      "community": 17,
       "norm_label": "list_cb()"
     },
     {
@@ -3933,7 +3933,7 @@
       "source_location": "L239",
       "_origin": "ast",
       "id": "unit_test_http_http_json_probe",
-      "community": 17,
+      "community": 18,
       "norm_label": "http_json_probe()"
     },
     {
@@ -3943,7 +3943,7 @@
       "source_location": "L239",
       "_origin": "ast",
       "id": "tests_unit_test_http_c_fluxipc_http_request_t",
-      "community": 17,
+      "community": 18,
       "norm_label": "fluxipc_http_request_t"
     },
     {
@@ -3953,7 +3953,7 @@
       "source_location": "L239",
       "_origin": "ast",
       "id": "tests_unit_test_http_c_fluxipc_http_response_t",
-      "community": 17,
+      "community": 18,
       "norm_label": "fluxipc_http_response_t"
     },
     {
@@ -3963,7 +3963,7 @@
       "source_location": "L254",
       "_origin": "ast",
       "id": "unit_test_http_http_negative",
-      "community": 17,
+      "community": 18,
       "norm_label": "http_negative()"
     },
     {
@@ -3973,7 +3973,7 @@
       "source_location": "L261",
       "_origin": "ast",
       "id": "unit_test_http_http_negative_with_json",
-      "community": 17,
+      "community": 18,
       "norm_label": "http_negative_with_json()"
     },
     {
@@ -3983,7 +3983,7 @@
       "source_location": "L271",
       "_origin": "ast",
       "id": "unit_test_http_http_custom_status",
-      "community": 17,
+      "community": 18,
       "norm_label": "http_custom_status()"
     },
     {
@@ -3993,7 +3993,7 @@
       "source_location": "L281",
       "_origin": "ast",
       "id": "unit_test_http_http_forced_status",
-      "community": 17,
+      "community": 18,
       "norm_label": "http_forced_status()"
     },
     {
@@ -4003,7 +4003,7 @@
       "source_location": "L290",
       "_origin": "ast",
       "id": "unit_test_http_http_empty_body",
-      "community": 17,
+      "community": 18,
       "norm_label": "http_empty_body()"
     },
     {
@@ -4013,7 +4013,7 @@
       "source_location": "L299",
       "_origin": "ast",
       "id": "unit_test_http_http_empty_default_ct",
-      "community": 17,
+      "community": 18,
       "norm_label": "http_empty_default_ct()"
     },
     {
@@ -4373,7 +4373,7 @@
       "source_location": "L395",
       "_origin": "ast",
       "id": "unit_test_interactive_inter_srv_setup",
-      "community": 2,
+      "community": 20,
       "norm_label": "inter_srv_setup()"
     },
     {
@@ -5023,7 +5023,7 @@
       "source_location": "L319",
       "_origin": "ast",
       "id": "unit_test_sock_test_client_connect_nonsocket",
-      "community": 1,
+      "community": 17,
       "norm_label": "test_client_connect_nonsocket()"
     },
     {
@@ -5043,7 +5043,7 @@
       "source_location": "L364",
       "_origin": "ast",
       "id": "unit_test_sock_fake_sock_path",
-      "community": 1,
+      "community": 17,
       "norm_label": "fake_sock_path()"
     },
     {
@@ -5053,7 +5053,7 @@
       "source_location": "L369",
       "_origin": "ast",
       "id": "unit_test_sock_test_client_bad_magic",
-      "community": 1,
+      "community": 17,
       "norm_label": "test_client_bad_magic()"
     },
     {
@@ -5063,7 +5063,7 @@
       "source_location": "L386",
       "_origin": "ast",
       "id": "unit_test_sock_test_call_alloc_bad_magic",
-      "community": 1,
+      "community": 17,
       "norm_label": "test_call_alloc_bad_magic()"
     },
     {
@@ -5073,7 +5073,7 @@
       "source_location": "L403",
       "_origin": "ast",
       "id": "unit_test_sock_test_client_truncated_body",
-      "community": 1,
+      "community": 17,
       "norm_label": "test_client_truncated_body()"
     },
     {
@@ -5083,7 +5083,7 @@
       "source_location": "L421",
       "_origin": "ast",
       "id": "unit_test_sock_test_call_alloc_truncated_body",
-      "community": 1,
+      "community": 17,
       "norm_label": "test_call_alloc_truncated_body()"
     },
     {
@@ -6367,6 +6367,66 @@
       "norm_label": "design notes"
     },
     {
+      "label": "Roadmap / TODO",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L569",
+      "_origin": "ast",
+      "id": "readme_roadmap_todo",
+      "community": 7,
+      "norm_label": "roadmap / todo"
+    },
+    {
+      "label": "Security & access control",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L576",
+      "_origin": "ast",
+      "id": "readme_security_access_control",
+      "community": 7,
+      "norm_label": "security & access control"
+    },
+    {
+      "label": "Concurrency & control",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L591",
+      "_origin": "ast",
+      "id": "readme_concurrency_control",
+      "community": 7,
+      "norm_label": "concurrency & control"
+    },
+    {
+      "label": "Performance",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L600",
+      "_origin": "ast",
+      "id": "readme_performance",
+      "community": 7,
+      "norm_label": "performance"
+    },
+    {
+      "label": "Scalability",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L612",
+      "_origin": "ast",
+      "id": "readme_scalability",
+      "community": 7,
+      "norm_label": "scalability"
+    },
+    {
+      "label": "Robustness",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": "L620",
+      "_origin": "ast",
+      "id": "readme_robustness",
+      "community": 7,
+      "norm_label": "robustness"
+    },
+    {
       "label": "README.zh-CN.md",
       "file_type": "document",
       "source_file": "README.zh-CN.md",
@@ -6665,6 +6725,66 @@
       "id": "readme_zh_cn_\u8bbe\u8ba1\u8bf4\u660e",
       "community": 22,
       "norm_label": "\u8bbe\u8ba1\u8bf4\u660e"
+    },
+    {
+      "label": "\u8def\u7ebf\u56fe / TODO",
+      "file_type": "document",
+      "source_file": "README.zh-CN.md",
+      "source_location": "L533",
+      "_origin": "ast",
+      "id": "readme_zh_cn_\u8def\u7ebf\u56fe_todo",
+      "community": 22,
+      "norm_label": "\u8def\u7ebf\u56fe / todo"
+    },
+    {
+      "label": "\u5b89\u5168\u4e0e\u8bbf\u95ee\u63a7\u5236",
+      "file_type": "document",
+      "source_file": "README.zh-CN.md",
+      "source_location": "L538",
+      "_origin": "ast",
+      "id": "readme_zh_cn_\u5b89\u5168\u4e0e\u8bbf\u95ee\u63a7\u5236",
+      "community": 22,
+      "norm_label": "\u5b89\u5168\u4e0e\u8bbf\u95ee\u63a7\u5236"
+    },
+    {
+      "label": "\u5e76\u53d1\u4e0e\u63a7\u5236\u6743",
+      "file_type": "document",
+      "source_file": "README.zh-CN.md",
+      "source_location": "L544",
+      "_origin": "ast",
+      "id": "readme_zh_cn_\u5e76\u53d1\u4e0e\u63a7\u5236\u6743",
+      "community": 22,
+      "norm_label": "\u5e76\u53d1\u4e0e\u63a7\u5236\u6743"
+    },
+    {
+      "label": "\u6027\u80fd",
+      "file_type": "document",
+      "source_file": "README.zh-CN.md",
+      "source_location": "L548",
+      "_origin": "ast",
+      "id": "readme_zh_cn_\u6027\u80fd",
+      "community": 22,
+      "norm_label": "\u6027\u80fd"
+    },
+    {
+      "label": "\u6269\u5c55\u6027",
+      "file_type": "document",
+      "source_file": "README.zh-CN.md",
+      "source_location": "L554",
+      "_origin": "ast",
+      "id": "readme_zh_cn_\u6269\u5c55\u6027",
+      "community": 22,
+      "norm_label": "\u6269\u5c55\u6027"
+    },
+    {
+      "label": "\u5065\u58ee\u6027",
+      "file_type": "document",
+      "source_file": "README.zh-CN.md",
+      "source_location": "L557",
+      "_origin": "ast",
+      "id": "readme_zh_cn_\u5065\u58ee\u6027",
+      "community": 22,
+      "norm_label": "\u5065\u58ee\u6027"
     },
     {
       "label": "UNIT_TEST_PLAN.md",
@@ -9121,9 +9241,9 @@
       "source_file": "src/fluxipc_core.c",
       "source_location": "L273",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "src_fluxipc_core",
-      "target": "src_fluxipc_core_fluxipc_static_add",
-      "confidence_score": 1.0
+      "target": "src_fluxipc_core_fluxipc_static_add"
     },
     {
       "relation": "contains",
@@ -9131,9 +9251,9 @@
       "source_file": "src/fluxipc_core.c",
       "source_location": "L286",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "src_fluxipc_core",
-      "target": "src_fluxipc_core_fluxipc_static_apply",
-      "confidence_score": 1.0
+      "target": "src_fluxipc_core_fluxipc_static_apply"
     },
     {
       "relation": "contains",
@@ -9352,9 +9472,9 @@
       "source_file": "src/fluxipc_core.c",
       "source_location": "L98",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "src_fluxipc_core_fluxipc_server_init",
-      "target": "src_fluxipc_core_fluxipc_static_apply",
-      "confidence_score": 1.0
+      "target": "src_fluxipc_core_fluxipc_static_apply"
     },
     {
       "relation": "calls",
@@ -11376,9 +11496,9 @@
       "source_file": "src/fluxipc_core.c",
       "source_location": "L290",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "src_fluxipc_core_fluxipc_static_apply",
-      "target": "src_fluxipc_core_fluxipc_register",
-      "confidence_score": 1.0
+      "target": "src_fluxipc_core_fluxipc_register"
     },
     {
       "relation": "calls",
@@ -11464,9 +11584,9 @@
       "source_location": "L273",
       "weight": 1.0,
       "context": "parameter_type",
+      "confidence_score": 1.0,
       "source": "src_fluxipc_core_fluxipc_static_add",
-      "target": "fluxipc_entry_t",
-      "confidence_score": 1.0
+      "target": "fluxipc_entry_t"
     },
     {
       "relation": "calls",
@@ -16663,9 +16783,9 @@
       "source_file": "tests/example_server.c",
       "source_location": "L712",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "tests_example_server",
-      "target": "tests_example_server_compiled_info_ipc",
-      "confidence_score": 1.0
+      "target": "tests_example_server_compiled_info_ipc"
     },
     {
       "relation": "contains",
@@ -19291,9 +19411,9 @@
       "source_file": "tests/unit/test_core.c",
       "source_location": "L528",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "unit_test_core",
-      "target": "unit_test_core_test_static_add_null",
-      "confidence_score": 1.0
+      "target": "unit_test_core_test_static_add_null"
     },
     {
       "relation": "contains",
@@ -24050,9 +24170,9 @@
       "source_file": "CLAUDE.md",
       "source_location": "L79",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "claude_architecture",
-      "target": "claude_registration_mechanism",
-      "confidence_score": 1.0
+      "target": "claude_registration_mechanism"
     },
     {
       "relation": "contains",
@@ -24388,6 +24508,16 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "README.md",
+      "source_location": "L569",
+      "weight": 1.0,
+      "source": "readme_fluxipc",
+      "target": "readme_roadmap_todo",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
       "source_location": "L76",
       "weight": 1.0,
       "confidence_score": 1.0,
@@ -24597,6 +24727,56 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L591",
+      "weight": 1.0,
+      "source": "readme_roadmap_todo",
+      "target": "readme_concurrency_control",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L600",
+      "weight": 1.0,
+      "source": "readme_roadmap_todo",
+      "target": "readme_performance",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L620",
+      "weight": 1.0,
+      "source": "readme_roadmap_todo",
+      "target": "readme_robustness",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L612",
+      "weight": 1.0,
+      "source": "readme_roadmap_todo",
+      "target": "readme_scalability",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L576",
+      "weight": 1.0,
+      "source": "readme_roadmap_todo",
+      "target": "readme_security_access_control",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "README.zh-CN.md",
       "source_location": "L1",
       "weight": 1.0,
@@ -24703,6 +24883,16 @@
       "confidence_score": 1.0,
       "source": "readme_zh_cn_fluxipc",
       "target": "readme_zh_cn_\u8bbe\u8ba1\u8bf4\u660e"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.zh-CN.md",
+      "source_location": "L533",
+      "weight": 1.0,
+      "source": "readme_zh_cn_fluxipc",
+      "target": "readme_zh_cn_\u8def\u7ebf\u56fe_todo",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -24883,6 +25073,56 @@
       "confidence_score": 1.0,
       "source": "readme_zh_cn_api_\u53c2\u8003",
       "target": "readme_zh_cn_\u670d\u52a1\u7aef_\u6811"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.zh-CN.md",
+      "source_location": "L557",
+      "weight": 1.0,
+      "source": "readme_zh_cn_\u8def\u7ebf\u56fe_todo",
+      "target": "readme_zh_cn_\u5065\u58ee\u6027",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.zh-CN.md",
+      "source_location": "L538",
+      "weight": 1.0,
+      "source": "readme_zh_cn_\u8def\u7ebf\u56fe_todo",
+      "target": "readme_zh_cn_\u5b89\u5168\u4e0e\u8bbf\u95ee\u63a7\u5236",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.zh-CN.md",
+      "source_location": "L544",
+      "weight": 1.0,
+      "source": "readme_zh_cn_\u8def\u7ebf\u56fe_todo",
+      "target": "readme_zh_cn_\u5e76\u53d1\u4e0e\u63a7\u5236\u6743",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.zh-CN.md",
+      "source_location": "L548",
+      "weight": 1.0,
+      "source": "readme_zh_cn_\u8def\u7ebf\u56fe_todo",
+      "target": "readme_zh_cn_\u6027\u80fd",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "README.zh-CN.md",
+      "source_location": "L554",
+      "weight": 1.0,
+      "source": "readme_zh_cn_\u8def\u7ebf\u56fe_todo",
+      "target": "readme_zh_cn_\u6269\u5c55\u6027",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -25421,5 +25661,5 @@
       "source_file": "FluxIPC_CSDN.md"
     }
   ],
-  "built_at_commit": "62e4bc1f553a5ddf1a1fdf2860fb85c6f89ad22e"
+  "built_at_commit": "5020f092973fc76d862939c5060ab6d6915bb396"
 }

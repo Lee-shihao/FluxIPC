@@ -551,8 +551,11 @@ FluxIPC/
 
 - **One tree, two handlers, two transports** — HTTP and the Unix socket both
   resolve the same tree; each invokes the leaf's own `http` or `ipc` handler.
-- **Node-based registration** — no ELF sections, no `-rdynamic`, no full-path
-  strings; containers and leaves are added one segment at a time.
+- **Registration is a mechanism, not a policy** — path-based helpers
+  (`fluxipc_register_method`) create any missing containers, while the node
+  primitives stay available.  The classic `fluxipc_register` signature and
+  `FLUXIPC_STATIC` are kept for main-branch compatibility; `FLUXIPC_STATIC` is
+  queued by a constructor, so there is still no ELF section and no `-rdynamic`.
 - **Built-in leaf listing** — every node can enumerate its leaves; HTTP exposes
   it as `GET /<container>`, the socket via the protocol's `LIST` op.
 - **REST + OpenAPI** — standard methods, status codes, `Allow`, and RFC 7807
@@ -560,3 +563,61 @@ FluxIPC/
 - **Unified non-blocking event loop** (`fluxipc_conn.c`) — one `select()` drives
   both listeners and every connection through a shared buffered state machine,
   so no peer can block the server.
+
+---
+
+## Roadmap / TODO
+
+These items are **deliberately deferred**: each is real only for a specific
+kind of deployment, and doing it early would add policy and complexity the
+library does not need yet.  Every entry states the trigger that makes it worth
+doing.
+
+### Security & access control
+- [ ] **Authentication + TLS** — HTTP has no auth and binds `INADDR_ANY`; the
+      Unix socket relies on OS permissions.  Do it when the HTTP port is exposed
+      to an untrusted network (prefer terminating TLS/auth at a reverse proxy
+      over building it into the library).
+- [ ] **Safe defaults** — bind HTTP to `127.0.0.1` by default (make the address
+      configurable) and stop sending `Access-Control-Allow-Origin: *`
+      unconditionally.  Cheap; worth doing proactively.
+- [ ] **A gate hook that can reject** — the pre/post hooks are read-only
+      observers and cannot veto a request; add a rejecting hook before any
+      application-level auth can be layered on.
+- [ ] **Rate limiting / idle timeouts** — a slow client can occupy one of the 32
+      connection slots indefinitely; add request rate limits and per-connection
+      idle timeouts.
+
+### Concurrency & control
+- [ ] **Exclusive control (lease)** — "who may operate this device now", as a TTL
+      lease + owner id (+ fencing token), deliberately **not** tied to the
+      connection.  Only needed when several independent clients must not
+      interleave writes; otherwise keep commands idempotent /
+      last-writer-wins.
+- [ ] **Optimistic concurrency** — `ETag` / `If-Match` with `409` / `412` for
+      read-modify-write endpoints; a lighter alternative to a lease.
+
+### Performance
+- [ ] **HTTP keep-alive / long connections** — saves one TCP handshake per
+      request.  Only worth it at high request rates or tight latency budgets; on
+      a direct link the gain is small.  Adds idle-timeout and pool-pressure
+      concerns.
+- [ ] **Batching** — let one request carry several operations; usually a bigger
+      win than keep-alive for chatty clients.
+- [ ] **Compact wire protocol** — a persistent framed protocol instead of HTTP
+      text + JSON for high-frequency device control.
+- [ ] **Trim per-response overhead** — drop the (unused) CORS headers on
+      non-browser links and avoid cJSON on hot paths.
+
+### Scalability
+- [ ] **Multi-threading / worker pool** — the event loop is single-threaded,
+      which is exactly what keeps handlers free of data races.  Add threads only
+      once there are multiple concurrent clients, a saturated core, or blocking
+      handlers; then prefer "single reactor + handler worker pool" or
+      thread-per-core with `SO_REUSEPORT`.  This reintroduces shared-state
+      locking in handlers.
+
+### Robustness
+- [ ] **`ENAMETOOLONG` for the node API** — `fluxipc_node_mkdir()` /
+      `fluxipc_node_leaf()` silently truncate an over-long `full_path`; the
+      path-based helpers already reject it.
