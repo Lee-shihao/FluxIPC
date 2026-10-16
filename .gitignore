@@ -1,22 +1,60 @@
-# Build output
+# ── Build output ─────────────────────────────────────────
 build/
-fluxipc-cli
-example_server
-example_client
-__pycache__/
-fluxipc.pc
+.tools/
 
-# Compiled objects and libraries
+# Built binaries (root-anchored)
+/fluxipc-cli
+/fluxipc-ut
+/fluxipc-ut-asan
+/fluxipc-it
+/example_server
+/example_client
+
+# Local toolchain / package artifacts
+*.deb
+
+# ── Coverage / profiling artifacts ───────────────────────
+*.gcov
+*.gcda
+*.gcno
+*.profraw
+*.profdata
+
+# ── Compilation database (regenerate with `make compdb`) ─
+compile_commands.json
+
+# ── Compiled objects and libraries ───────────────────────
 *.o
 *.a
 *.so
 *.so.*
 *.dylib
 
-# Editor and OS files
+# ── Generated pkg-config ─────────────────────────────────
+fluxipc.pc
+
+# ── Python ───────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ── Editor and OS files ──────────────────────────────────
 *~
 *.swp
+*.orig
+*.rej
 .DS_Store
+.clangd/
+
+# ── Crash dumps ──────────────────────────────────────────
+core
+core.*
+*.core
+
+# ── Local caches ─────────────────────────────────────────
+.cache/
 
 # Claude Code local settings (personal, not shared)
 .claude/settings.local.json
@@ -30,4 +68,3 @@ graphify-out/*.log
 graphify-out/.graphify_*.json
 graphify-out/.graphify_python
 graphify-out/.graphify_root
-

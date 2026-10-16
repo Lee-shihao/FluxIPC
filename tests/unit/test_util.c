@@ -1,0 +1,333 @@
+/**
+ * test_util.c – unit tests for the pure parsing helpers.
+ *
+ * These functions are the front line for hostile input, so the cases focus on
+ * boundaries: escape at end-of-string, capacity exhaustion, empty segments.
+ */
+
+#include "ut_common.h"
+#include <string.h>
+
+/* ── fluxipc_url_decode ──────────────────────────────────────────────────── */
+
+static void test_url_decode_basic(void **state)
+{
+    (void)state;
+    char buf[64];
+
+    assert_int_equal(fluxipc_url_decode("a%20b", 5, buf, sizeof(buf)), 3);
+    assert_string_equal(buf, "a b");
+
+    assert_int_equal(fluxipc_url_decode("%2F", 3, buf, sizeof(buf)), 1);
+    assert_string_equal(buf, "/");
+
+    assert_int_equal(fluxipc_url_decode("%2f", 3, buf, sizeof(buf)), 1);
+    assert_string_equal(buf, "/");
+
+    assert_int_equal(fluxipc_url_decode("%41%42", 6, buf, sizeof(buf)), 2);
+    assert_string_equal(buf, "AB");
+
+    assert_int_equal(fluxipc_url_decode("plain", 5, buf, sizeof(buf)), 5);
+    assert_string_equal(buf, "plain");
+}
+
+static void test_url_decode_invalid_escape(void **state)
+{
+    (void)state;
+    char buf[64];
+
+    /* invalid hex digits are kept literally */
+    assert_int_equal(fluxipc_url_decode("%zz", 3, buf, sizeof(buf)), 3);
+    assert_string_equal(buf, "%zz");
+
+    assert_int_equal(fluxipc_url_decode("a%2Gb", 5, buf, sizeof(buf)), 5);
+    assert_string_equal(buf, "a%2Gb");
+
+    /* too short: "%2" and a trailing "%" are literal */
+    assert_int_equal(fluxipc_url_decode("%2", 2, buf, sizeof(buf)), 2);
+    assert_string_equal(buf, "%2");
+
+    assert_int_equal(fluxipc_url_decode("ab%", 3, buf, sizeof(buf)), 3);
+    assert_string_equal(buf, "ab%");
+}
+
+static void test_url_decode_capacity(void **state)
+{
+    (void)state;
+    char buf[8];
+
+    /* exact fit: cap 5 holds 4 chars + NUL */
+    memset(buf, 'X', sizeof(buf));
+    assert_int_equal(fluxipc_url_decode("abcd", 4, buf, 5), 4);
+    assert_string_equal(buf, "abcd");
+
+    /* truncated: cap 4 holds 3 chars + NUL */
+    memset(buf, 'X', sizeof(buf));
+    assert_int_equal(fluxipc_url_decode("abcdef", 6, buf, 4), 3);
+    assert_string_equal(buf, "abc");
+
+    /* cap 1 → only the terminator */
+    memset(buf, 'X', sizeof(buf));
+    assert_int_equal(fluxipc_url_decode("abc", 3, buf, 1), 0);
+    assert_int_equal(buf[0], '\0');
+
+    /* cap 0 → nothing written, returns 0 */
+    assert_int_equal(fluxipc_url_decode("abc", 3, buf, 0), 0);
+
+    /* NULL destination */
+    assert_int_equal(fluxipc_url_decode("abc", 3, NULL, 8), 0);
+}
+
+static void test_url_decode_edge(void **state)
+{
+    (void)state;
+    char buf[8];
+
+    /* %00 decodes to an embedded NUL but still counts one output byte */
+    assert_int_equal(fluxipc_url_decode("%00", 3, buf, sizeof(buf)), 1);
+    assert_int_equal(buf[0], '\0');
+
+    /* empty input */
+    assert_int_equal(fluxipc_url_decode("", 0, buf, sizeof(buf)), 0);
+    assert_int_equal(buf[0], '\0');
+
+    /* a literal % that is followed by valid hex but out of range stays put */
+    assert_int_equal(fluxipc_url_decode("100%", 4, buf, sizeof(buf)), 4);
+    assert_string_equal(buf, "100%");
+}
+
+/* ── fluxipc_parse_query ─────────────────────────────────────────────────── */
+
+static void test_query_basic(void **state)
+{
+    (void)state;
+    fluxipc_kv_t kv[8];
+    char arena[128];
+
+    int n = fluxipc_parse_query("a=1&b=hello%20world", 19, kv, 8,
+                                arena, sizeof(arena));
+    assert_int_equal(n, 2);
+    assert_string_equal(kv[0].key, "a");
+    assert_string_equal(kv[0].value, "1");
+    assert_string_equal(kv[1].key, "b");
+    assert_string_equal(kv[1].value, "hello world");
+}
+
+static void test_query_no_equals(void **state)
+{
+    (void)state;
+    fluxipc_kv_t kv[4];
+    char arena[64];
+
+    int n = fluxipc_parse_query("flag", 4, kv, 4, arena, sizeof(arena));
+    assert_int_equal(n, 1);
+    assert_string_equal(kv[0].key, "flag");
+    assert_string_equal(kv[0].value, "");
+}
+
+static void test_query_empty_parts(void **state)
+{
+    (void)state;
+    fluxipc_kv_t kv[8];
+    char arena[128];
+
+    /* leading '&' yields an empty first pair */
+    int n = fluxipc_parse_query("&a=1", 4, kv, 8, arena, sizeof(arena));
+    assert_int_equal(n, 2);
+    assert_string_equal(kv[0].key, "");
+    assert_string_equal(kv[0].value, "");
+    assert_string_equal(kv[1].key, "a");
+
+    /* trailing '&' does not add a pair */
+    n = fluxipc_parse_query("a=1&", 4, kv, 8, arena, sizeof(arena));
+    assert_int_equal(n, 1);
+
+    /* "=v" → empty key; "a=" → empty value */
+    n = fluxipc_parse_query("=v", 2, kv, 8, arena, sizeof(arena));
+    assert_int_equal(n, 1);
+    assert_string_equal(kv[0].key, "");
+    assert_string_equal(kv[0].value, "v");
+
+    n = fluxipc_parse_query("a=", 2, kv, 8, arena, sizeof(arena));
+    assert_int_equal(n, 1);
+    assert_string_equal(kv[0].key, "a");
+    assert_string_equal(kv[0].value, "");
+}
+
+static void test_query_limits(void **state)
+{
+    (void)state;
+    fluxipc_kv_t kv[8];
+    char arena[128];
+
+    /* max_kv caps the number of parsed pairs */
+    int n = fluxipc_parse_query("a=1&b=2&c=3", 11, kv, 2,
+                                arena, sizeof(arena));
+    assert_int_equal(n, 2);
+
+    /* NULL / empty fast paths */
+    assert_int_equal(fluxipc_parse_query(NULL, 4, kv, 8, arena, sizeof(arena)), 0);
+    assert_int_equal(fluxipc_parse_query("", 0, kv, 8, arena, sizeof(arena)), 0);
+
+    /* arena too small → stop early (at least one pair must not fit) */
+    char tiny[4];
+    n = fluxipc_parse_query("aaaa=bbbb&cccc=dddd", 19, kv, 8, tiny, sizeof(tiny));
+    assert_true(n <= 2);
+}
+
+static void test_query_repeated_and_encoded(void **state)
+{
+    (void)state;
+    fluxipc_kv_t kv[8];
+    char arena[128];
+
+    int n = fluxipc_parse_query("a=1&a=2", 7, kv, 8, arena, sizeof(arena));
+    assert_int_equal(n, 2);
+    assert_string_equal(kv[0].value, "1");
+    assert_string_equal(kv[1].value, "2");
+
+    n = fluxipc_parse_query("k%20ey=v%2Fal", 13, kv, 8, arena, sizeof(arena));
+    assert_int_equal(n, 1);
+    assert_string_equal(kv[0].key, "k ey");
+    assert_string_equal(kv[0].value, "v/al");
+}
+
+/* ── fluxipc_find_content_length ─────────────────────────────────────────── */
+
+static size_t hbytes_of(const char *req)
+{
+    const char *e = strstr(req, "\r\n\r\n");
+    return e ? (size_t)(e - req) : 0;
+}
+
+static void test_content_length_present(void **state)
+{
+    (void)state;
+    const char *h1 =
+        "POST /x HTTP/1.1\r\nHost: h\r\nContent-Length: 42\r\n\r\n";
+    assert_int_equal(fluxipc_find_content_length(h1, hbytes_of(h1)), 42);
+
+    /* case-insensitive, leading spaces, tabs, trailing junk */
+    const char *h2 =
+        "POST /x HTTP/1.1\r\ncontent-length:\t 7x\r\n\r\n";
+    assert_int_equal(fluxipc_find_content_length(h2, hbytes_of(h2)), 7);
+}
+
+static void test_content_length_absent(void **state)
+{
+    (void)state;
+    const char *h1 = "GET / HTTP/1.1\r\nHost: h\r\n\r\n";
+    assert_int_equal(fluxipc_find_content_length(h1, hbytes_of(h1)), 0);
+
+    /* no CRLF at all */
+    const char *h2 = "GET / HTTP/1.1";
+    assert_int_equal(fluxipc_find_content_length(h2, strlen(h2)), 0);
+
+    /* hbytes == 0 */
+    assert_int_equal(fluxipc_find_content_length("garbage", 0), 0);
+
+    /* header name that merely starts with the same prefix */
+    const char *h3 = "GET / HTTP/1.1\r\nX-Content-Length: 9\r\n\r\n";
+    assert_int_equal(fluxipc_find_content_length(h3, hbytes_of(h3)), 0);
+}
+
+static void test_content_length_no_mutation(void **state)
+{
+    (void)state;
+    const char *h1 =
+        "POST /x HTTP/1.1\r\nHost: h\r\nContent-Length: 42\r\n\r\n";
+    char copy[128];
+    strcpy(copy, h1);
+    size_t hb = hbytes_of(copy);
+    assert_int_equal(fluxipc_find_content_length(copy, hb), 42);
+    assert_string_equal(copy, h1);   /* unchanged */
+}
+
+static void test_url_decode_hex_boundaries(void **state)
+{
+    (void)state;
+    char buf[8];
+    /* exercise every hex-digit boundary in hexval() */
+    assert_int_equal(fluxipc_url_decode("%30", 3, buf, sizeof(buf)), 1);
+    assert_int_equal(buf[0], '0');
+    assert_int_equal(fluxipc_url_decode("%39", 3, buf, sizeof(buf)), 1);
+    assert_int_equal(buf[0], '9');
+    assert_int_equal(fluxipc_url_decode("%61", 3, buf, sizeof(buf)), 1);
+    assert_int_equal(buf[0], 'a');
+    assert_int_equal(fluxipc_url_decode("%66", 3, buf, sizeof(buf)), 1);
+    assert_int_equal(buf[0], 'f');
+    assert_int_equal(fluxipc_url_decode("%41", 3, buf, sizeof(buf)), 1);
+    assert_int_equal(buf[0], 'A');
+    assert_int_equal(fluxipc_url_decode("%46", 3, buf, sizeof(buf)), 1);
+    assert_int_equal(buf[0], 'F');
+    /* hex digits exactly at 'a' and 'A' (lower/upper-range starts) */
+    assert_int_equal(fluxipc_url_decode("%1a", 3, buf, sizeof(buf)), 1);
+    assert_int_equal(buf[0], 0x1a);
+    assert_int_equal(fluxipc_url_decode("%1A", 3, buf, sizeof(buf)), 1);
+    assert_int_equal(buf[0], 0x1a);
+
+    /* just outside the hex-digit ranges are invalid and stay literal */
+    assert_int_equal(fluxipc_url_decode("%3:", 3, buf, sizeof(buf)), 3);  /* ':' > '9' */
+    assert_string_equal(buf, "%3:");
+    assert_int_equal(fluxipc_url_decode("%3/", 3, buf, sizeof(buf)), 3);  /* '/' < '0' */
+    assert_int_equal(fluxipc_url_decode("%3g", 3, buf, sizeof(buf)), 3);  /* 'g' > 'f' */
+    assert_int_equal(fluxipc_url_decode("%3`", 3, buf, sizeof(buf)), 3);  /* '`' < 'a' */
+    assert_int_equal(fluxipc_url_decode("%3G", 3, buf, sizeof(buf)), 3);  /* 'G' > 'F' */
+    assert_int_equal(fluxipc_url_decode("%3@", 3, buf, sizeof(buf)), 3);  /* '@' < 'A' */
+    assert_int_equal(fluxipc_url_decode("%2F", 3, buf, sizeof(buf)), 1);  /* '/' */
+}
+
+static void test_url_decode_loop_sentinel(void **state)
+{
+    (void)state;
+    /* slen stops before the sentinel; a <= off-by-one would decode 'X' */
+    char src[] = "abX";
+    char buf[8];
+    assert_int_equal(fluxipc_url_decode(src, 2, buf, sizeof(buf)), 2);
+    assert_string_equal(buf, "ab");
+}
+
+static void test_find_content_length_digit_boundaries(void **state)
+{
+    (void)state;
+    const char *h1 = "POST / HTTP/1.1\r\nContent-Length: 10\r\n\r\n";
+    assert_int_equal(fluxipc_find_content_length(h1, hbytes_of(h1)), 10);
+    const char *h2 = "POST / HTTP/1.1\r\nContent-Length: 90\r\n\r\n";
+    assert_int_equal(fluxipc_find_content_length(h2, hbytes_of(h2)), 90);
+    const char *h3 = "POST / HTTP/1.1\r\nContent-Length: 0\r\n\r\n";
+    assert_int_equal(fluxipc_find_content_length(h3, hbytes_of(h3)), 0);
+}
+
+static void test_query_exact_arena(void **state)
+{
+    (void)state;
+    fluxipc_kv_t kv[4];
+    char arena[4];                             /* exactly "a\0" + "1\0" */
+    int n = fluxipc_parse_query("a=1", 3, kv, 4, arena, sizeof(arena));
+    assert_int_equal(n, 1);
+    assert_string_equal(kv[0].key, "a");
+    assert_string_equal(kv[0].value, "1");
+}
+
+int ut_util(void)
+{
+    const struct CMUnitTest tests[] = {
+        cmocka_unit_test(test_url_decode_basic),
+        cmocka_unit_test(test_url_decode_invalid_escape),
+        cmocka_unit_test(test_url_decode_capacity),
+        cmocka_unit_test(test_url_decode_edge),
+        cmocka_unit_test(test_query_basic),
+        cmocka_unit_test(test_query_no_equals),
+        cmocka_unit_test(test_query_empty_parts),
+        cmocka_unit_test(test_query_limits),
+        cmocka_unit_test(test_query_repeated_and_encoded),
+        cmocka_unit_test(test_content_length_present),
+        cmocka_unit_test(test_content_length_absent),
+        cmocka_unit_test(test_content_length_no_mutation),
+        cmocka_unit_test(test_url_decode_hex_boundaries),
+        cmocka_unit_test(test_url_decode_loop_sentinel),
+        cmocka_unit_test(test_find_content_length_digit_boundaries),
+        cmocka_unit_test(test_query_exact_arena),
+    };
+    return cmocka_run_group_tests(tests, NULL, NULL);
+}

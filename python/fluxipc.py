@@ -1,224 +1,115 @@
 """
-fluxipc.py – Python client for FluxIPC MCP server
+fluxipc.py – Python client for the FluxIPC HTTP server.
 
-Transport: Streamable HTTP (MCP spec 2025-03-26) over TCP.
-Speaks standard HTTP/1.1 POST to /mcp for requests.
-Zero dependencies beyond the Python standard library.
+Speaks plain HTTP/1.1 with JSON bodies against the REST interface exposed by
+any FluxIPC server:
 
-Quickstart
-----------
-    from fluxipc import FluxIPC
+    GET    /<container>     -> manifest of leaves below it
+    GET    /<leaf>          -> invoke (read)
+    POST   /<leaf>          -> invoke (write / action)
+    PUT/PATCH/DELETE ...
+    GET    /openapi.json    -> OpenAPI 3.1 document
 
-    ipc = FluxIPC("localhost", 32100)
-    print(ipc.call("/system/info"))
-    print(ipc.call("/demo/arithmetic/add", "7", "3"))
-
-    for tool in ipc.list_tools():
-        print(tool["name"], "–", tool.get("description", ""))
-
-Context manager
----------------
-    with FluxIPC("localhost", 32100) as ipc:
-        result = ipc.call("/system/uptime")
+Only the standard library is required.
 """
 
 from __future__ import annotations
 
-import itertools
 import json
-import socket
-from typing import Any
+import urllib.error
+import urllib.parse
+import urllib.request
 
 
 class FluxIPCError(Exception):
-    """Raised when the server returns a JSON-RPC error."""
-    def __init__(self, code: int, message: str) -> None:
-        super().__init__(f"[{code}] {message}")
-        self.code    = code
-        self.message = message
+    """Raised for a non-2xx HTTP response (RFC 7807 problem+json)."""
+
+    def __init__(self, status: int, detail, url: str):
+        self.status = status
+        self.detail = detail
+        self.url = url
+        super().__init__(f"HTTP {status} for {url}: {detail}")
 
 
 class FluxIPC:
-    """MCP Streamable-HTTP client for a FluxIPC server.
-
-    Parameters
-    ----------
-    host:    Hostname or IP address of the server.
-    port:    TCP port (default 32100).
-    timeout: Socket timeout in seconds (default 10).
-    """
-
-    _id_counter = itertools.count(1)
+    """Minimal REST client for a FluxIPC server."""
 
     def __init__(self, host: str = "localhost", port: int = 32100,
-                 timeout: float = 10.0) -> None:
-        self._host         = host
-        self._port         = port
-        self._timeout      = timeout
-        self._session_id   = None   # set after initialize
-        self._proto_ver    = "2025-03-26"  # will be negotiated
-        self._initialize()
+                 timeout: float = 5.0):
+        self.base = f"http://{host}:{port}"
+        self.timeout = timeout
 
-    # ── connection management ────────────────────────────────────────────── #
+    # ── low level ──────────────────────────────────────────────────────────
 
-    def _connect(self) -> socket.socket:
-        """Open a fresh TCP connection for one HTTP request."""
-        s = socket.create_connection((self._host, self._port),
-                                     timeout=self._timeout)
-        s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        return s
+    def request(self, method: str, path: str, body=None,
+                query: dict | None = None) -> dict | None:
+        url = self.base + path
+        if query:
+            url += "?" + urllib.parse.urlencode(query)
 
-    def close(self) -> None:
-        """No-op for API compatibility; connections are per-request."""
+        data = None
+        headers = {"Accept": "application/json"}
+        if body is not None:
+            data = json.dumps(body).encode("utf-8")
+            headers["Content-Type"] = "application/json"
 
-    def __enter__(self) -> "FluxIPC":
-        return self
+        req = urllib.request.Request(url, data=data, headers=headers,
+                                     method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                raw = resp.read()
+                if not raw:
+                    return None
+                return json.loads(raw.decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            raw = e.read()
+            try:
+                detail = json.loads(raw.decode("utf-8"))
+            except Exception:
+                detail = raw.decode("utf-8", "replace")
+            raise FluxIPCError(e.code, detail, url) from None
+        except urllib.error.URLError as e:
+            raise FluxIPCError(0, str(e.reason), url) from None
 
-    def __exit__(self, *_: Any) -> None:
-        self.close()
+    # ── convenience ────────────────────────────────────────────────────────
 
-    # ── HTTP/1.1 transport ───────────────────────────────────────────────── #
+    def get(self, path: str, **query) -> dict | None:
+        return self.request("GET", path, query=query or None)
 
-    def _http_post(self, body: bytes) -> bytes:
-        """POST body to /mcp, return the response body bytes."""
-        headers = (
-            f"POST /mcp HTTP/1.1\r\n"
-            f"Host: {self._host}:{self._port}\r\n"
-            f"Content-Type: application/json\r\n"
-            f"Accept: application/json, text/event-stream\r\n"
-            f"Content-Length: {len(body)}\r\n"
-        )
-        if self._session_id:
-            headers += f"Mcp-Session-Id: {self._session_id}\r\n"
-        if self._proto_ver:
-            headers += f"Mcp-Protocol-Version: {self._proto_ver}\r\n"
-        headers += "Connection: close\r\n\r\n"
+    def post(self, path: str, body=None) -> dict | None:
+        return self.request("POST", path, body=body if body is not None else {})
 
-        with self._connect() as s:
-            s.sendall(headers.encode() + body)
-            resp = b""
-            while True:
-                chunk = s.recv(65536)
-                if not chunk:
-                    break
-                resp += chunk
+    def put(self, path: str, body=None) -> dict | None:
+        return self.request("PUT", path, body=body if body is not None else {})
 
-        return self._parse_http_response(resp)
+    def patch(self, path: str, body=None) -> dict | None:
+        return self.request("PATCH", path, body=body if body is not None else {})
 
-    def _parse_http_response(self, raw: bytes) -> bytes:
-        """Extract body from a raw HTTP/1.1 response.
+    def delete(self, path: str) -> dict | None:
+        return self.request("DELETE", path)
 
-        Returns the body bytes, which may be empty for 202 responses.
-        Also extracts Mcp-Session-Id from response headers for session
-        management.
-        """
-        # Server closed connection before sending any bytes (notification ACK)
-        if not raw:
-            return b""
+    def options(self, path: str) -> dict | None:
+        return self.request("OPTIONS", path)
 
-        sep = raw.find(b"\r\n\r\n")
-        if sep < 0:
-            # Incomplete response – treat as empty body if it looks like 2xx
-            if raw.startswith(b"HTTP/1.1 2"):
-                return b""
-            raise ConnectionError("malformed HTTP response")
+    # ── discovery ──────────────────────────────────────────────────────────
 
-        headers_text = raw[:sep].decode(errors="replace")
-        body         = raw[sep + 4:]
+    def list(self, path: str = "/", recursive: bool = True) -> dict:
+        """Return the leaf manifest for a container (all nodes support this)."""
+        q = None if recursive else {"recursive": "0"}
+        return self.request("GET", path, query=q) or {}
 
-        status_line = headers_text.splitlines()[0]
-        if not status_line.startswith("HTTP/1.1 2"):
-            raise ConnectionError(f"HTTP error: {status_line}")
+    def openapi(self) -> dict:
+        """Return the generated OpenAPI 3.1 document."""
+        return self.request("GET", "/openapi.json") or {}
 
-        # Extract Mcp-Session-Id from response headers (case-insensitive)
-        for line in headers_text.splitlines():
-            if line.lower().startswith("mcp-session-id:"):
-                sid = line.split(":", 1)[1].strip()
-                if sid:
-                    self._session_id = sid
-                    break
+    def healthz(self) -> dict:
+        return self.request("GET", "/healthz") or {}
 
-        return body
 
-    # ── JSON-RPC layer ───────────────────────────────────────────────────── #
+if __name__ == "__main__":  # tiny CLI: python3 fluxipc.py [host] [port]
+    import sys
 
-    def _call_rpc(self, method: str, **params: Any) -> Any:
-        """Send one JSON-RPC request, return result (raises FluxIPCError on error)."""
-        msg = {
-            "jsonrpc": "2.0",
-            "id":      next(self._id_counter),
-            "method":  method,
-            "params":  params,
-        }
-        body = json.dumps(msg, separators=(",", ":")).encode()
-        raw  = self._http_post(body)
-
-        # Handle SSE-wrapped response (Content-Type: text/event-stream)
-        if raw.startswith(b"data:"):
-            # Strip SSE framing: "data: <json>\n\n"
-            raw = raw.removeprefix(b"data:").strip()
-
-        resp = json.loads(raw)
-        if "error" in resp:
-            e = resp["error"]
-            raise FluxIPCError(e.get("code", -1), e.get("message", "unknown error"))
-        return resp.get("result")
-
-    def _notify(self, method: str, **params: Any) -> None:
-        """Send a JSON-RPC notification (no id, 202 response expected)."""
-        msg = {"jsonrpc": "2.0", "method": method, "params": params}
-        body = json.dumps(msg, separators=(",", ":")).encode()
-        self._http_post(body)
-
-    # ── MCP handshake ────────────────────────────────────────────────────── #
-
-    def _initialize(self) -> None:
-        result = self._call_rpc(
-            "initialize",
-            protocolVersion=self._proto_ver,
-            capabilities={},
-            clientInfo={"name": "fluxipc.py", "version": "1.0.0"},
-        )
-        # Accept the server's protocol version
-        if result and "protocolVersion" in result:
-            self._proto_ver = result["protocolVersion"]
-        self._notify("notifications/initialized")
-
-    # ── public API ───────────────────────────────────────────────────────── #
-
-    def list_tools(self) -> list[dict]:
-        """Return all tools exposed by this FluxIPC server."""
-        result = self._call_rpc("tools/list")
-        return result.get("tools", [])
-
-    def call(self, path: str, *args: str) -> str:
-        """Invoke a FluxIPC endpoint and return its text output.
-
-        Parameters
-        ----------
-        path:  IPC path, e.g. "/system/info" or "/demo/arithmetic/add".
-               Leading slash optional; slashes become underscores for MCP.
-        *args: Positional string arguments forwarded to the handler.
-
-        Returns
-        -------
-        Handler output as a string.
-
-        Raises
-        ------
-        FluxIPCError on server-side error.
-        """
-        name   = path.lstrip("/").replace("/", "_")
-        result = self._call_rpc("tools/call",
-                                name=name,
-                                arguments={"args": list(args)})
-        content = result.get("content", [])
-        return content[0]["text"] if content else ""
-
-    def ping(self) -> bool:
-        """Ping the server. Returns True on success."""
-        self._call_rpc("ping")
-        return True
-
-    def __repr__(self) -> str:
-        return f"FluxIPC({self._host!r}, {self._port})"
+    host = sys.argv[1] if len(sys.argv) > 1 else "localhost"
+    port = int(sys.argv[2]) if len(sys.argv) > 2 else 32100
+    client = FluxIPC(host, port)
+    print(json.dumps(client.list("/"), indent=2))

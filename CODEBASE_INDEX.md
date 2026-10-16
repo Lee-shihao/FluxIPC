@@ -14,17 +14,22 @@
 - `fluxipc.h`
 
 **python/**
-- `fluxipc.py` — FluxIPCError, FluxIPC
-- `test_mcp.py` — ok, fail, check, test_initialize, test_ping, test_tools_list, test_tools_call_basic, test_tools_call_args +2
+- `fluxipc.py` — FluxIPCError, FluxIPC (stdlib REST client)
+- `test_http.py` — integration test for the HTTP server
 
 **src/**
 - `fluxipc_core.c`
 - `fluxipc_interactive.c`
-- `fluxipc_mcp.c`
-- `fluxipc_shm.c`
+- `fluxipc_http.c`
+- `fluxipc_conn.c`
+- `fluxipc_util.c`
 - `fluxipc_sock.c`
-- `fluxipc_symlink.c`
 - `fluxipc_tree.c`
+
+**tests/**
+- `example_server.c`
+- `unit/` — fluxipc-ut
+- `integration/` — fluxipc-it
 
 **tests/**
 - `example_server.c`

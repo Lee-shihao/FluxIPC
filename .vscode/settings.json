@@ -1,0 +1,22 @@
+{
+  // ── C/C++ IntelliSense ───────────────────────────────────────────────
+  // This project uses clangd for go-to-definition / completion.  clangd
+  // reads ./compile_commands.json (generate it with `make compdb`).
+  // The MS C/C++ language service is turned off so the two engines don't
+  // fight over Ctrl+click.  Debugging (F5 / cppdbg) still works fine.
+  "C_Cpp.intelliSenseEngine": "disabled",
+
+  "clangd.arguments": [
+    "--compile-commands-dir=${workspaceFolder}",
+    "--background-index",
+    "--clang-tidy",
+    "--completion-style=detailed",
+    "--header-insertion=iwyu",
+    "--query-driver=/usr/bin/*gcc*,/usr/bin/*g++*,/usr/bin/clang*"
+  ],
+
+  // Regenerate the database whenever the build system changes.
+  "files.associations": {
+    "*.h": "c"
+  }
+}

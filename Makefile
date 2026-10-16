@@ -3,16 +3,17 @@ CFLAGS   += -Wall -Wextra -O2 -g \
             -Iinclude \
             -D_GNU_SOURCE \
             -Wno-unused-parameter \
+            $(shell pkg-config --cflags libcjson 2>/dev/null) \
             $(shell pkg-config --cflags readline 2>/dev/null)
 LDFLAGS  +=
-LDLIBS   += -lrt -lpthread -lreadline
+LDLIBS   += -lrt -lpthread -lreadline $(shell pkg-config --libs libcjson 2>/dev/null || echo -lcjson)
 
 # ── Debug options ───────────────────────────────────────
-#   make MCP_DEBUG=1          – verbose MCP request/response logging
+#   make HTTP_DEBUG=1         – verbose HTTP request/response logging
 #   make debug                – shortcut: full debug build
-MCP_DEBUG ?= 0
-ifeq ($(MCP_DEBUG),1)
-    CFLAGS += -DMCP_DEBUG
+HTTP_DEBUG ?= 0
+ifeq ($(HTTP_DEBUG),1)
+    CFLAGS += -DHTTP_DEBUG
 endif
 
 VERSION      ?= 1.0.0
@@ -26,11 +27,11 @@ PKGCONFIGDIR ?= $(LIBDIR)/pkgconfig
 
 LIB_SRCS := src/fluxipc_core.c \
             src/fluxipc_tree.c \
-            src/fluxipc_shm.c  \
             src/fluxipc_sock.c \
-            src/fluxipc_symlink.c \
+            src/fluxipc_conn.c \
+            src/fluxipc_util.c \
             src/fluxipc_interactive.c \
-            src/fluxipc_mcp.c
+            src/fluxipc_http.c
 
 CLI_SRCS := cli/fluxipc_cli.c $(LIB_SRCS)
 
@@ -45,7 +46,7 @@ TARGET_CLI  := fluxipc-cli
 
 # ── Top-level targets ────────────────────────────────
 
-.PHONY: all clean install uninstall distclean lib static cli examples debug
+.PHONY: all clean install uninstall distclean lib static cli examples debug compdb ut it test cov mutate tools check-tools ut-asan
 
 all: lib static cli examples
 
@@ -57,8 +58,101 @@ cli: $(TARGET_CLI)
 
 examples: example_server
 
+# ── Tests ────────────────────────────────────────────
+#
+# The unit suite uses cmocka; the mutation build uses Mull (clang-14 plugin).
+# Both live in .tools/ and are installed by tests/tools/bootstrap.sh (no root).
+#
+#   make tools     – download + extract the toolchain into .tools/
+#   make ut        – run the cmocka unit suite
+#   make it        – run the IPC + HTTP integration suite
+#   make cov       – gcovr coverage report + threshold gate
+#   make mutate    – Mull mutation testing + score gate
+
+TOOLS_DIR      ?= .tools
+CMOCKA_PREFIX  ?= $(TOOLS_DIR)/usr
+CMOCKA_CFLAGS  := -I$(abspath $(CMOCKA_PREFIX))/include
+CMOCKA_LIBDIR  := $(abspath $(CMOCKA_PREFIX))/lib/x86_64-linux-gnu
+CMOCKA_LDFLAGS := -L$(CMOCKA_LIBDIR) -lcmocka -Wl,-rpath,$(CMOCKA_LIBDIR)
+
+MULL_RUNNER    := $(abspath $(TOOLS_DIR))/usr/bin/mull-runner-14
+MULL_FRONTEND  := $(abspath $(TOOLS_DIR))/usr/lib/mull-ir-frontend-14
+CLANG          ?= clang-14
+
+# Coverage / mutation thresholds (see tests/UNIT_TEST_PLAN.md).
+COV_LINE_MIN   ?= 90
+COV_BRANCH_MIN ?= 78
+MUT_SCORE_MIN  ?= 70
+
+# cJSON / readline flags (shared CFLAGS already contain them).
+TEST_CFLAGS := $(CFLAGS) $(CMOCKA_CFLAGS) -DFLUXIPC_TESTING
+
+# Unit tests are built straight from sources (never via the static archive) so
+# that coverage/mutation instrumentation sees every translation unit.  The
+# interactive module is pulled in by test_interactive.c (white-box include),
+# so it is excluded from the link list to avoid duplicate symbols.
+UT_BIN       := fluxipc-ut
+IT_BIN       := fluxipc-it
+UT_SRCS      := tests/unit/ut_main.c tests/unit/ut_common.c \
+                tests/unit/test_protocol.c tests/unit/test_util.c \
+                tests/unit/test_tree.c tests/unit/test_core.c \
+                tests/unit/test_sock.c tests/unit/test_conn.c \
+                tests/unit/test_http.c tests/unit/test_interactive.c \
+                tests/unit/test_cli.c
+UT_LIB_SRCS  := $(filter-out src/fluxipc_interactive.c,$(LIB_SRCS))
+IT_SRCS      := tests/integration/main.c
+
+check-tools:
+	@test -f "$(CMOCKA_LIBDIR)/libcmocka.so" || { \
+		echo "error: test toolchain missing; run 'make tools' first"; exit 1; }
+
+$(UT_BIN): check-tools $(UT_SRCS) $(UT_LIB_SRCS)
+	$(CC) $(TEST_CFLAGS) -o $@ $(UT_SRCS) $(UT_LIB_SRCS) $(TEST_LDFLAGS) \
+	    $(LDLIBS) $(CMOCKA_LDFLAGS)
+
+$(IT_BIN): $(IT_SRCS) $(TARGET_STATIC)
+	$(CC) $(CFLAGS) -o $@ $(IT_SRCS) $(TARGET_STATIC) $(LDFLAGS) $(LDLIBS)
+
+# Unit tests: cmocka suites, fork-free, run in-process.
+ut: $(UT_BIN)
+	./$(UT_BIN)
+
+# Integration tests: forks example_server, exercises IPC + HTTP.
+it: $(IT_BIN) example_server
+	-@pkill -x example_server 2>/dev/null; sleep 0.2
+	./$(IT_BIN)
+
+# ── Toolchain bootstrap ──────────────────────────────
+
+tools:
+	tests/tools/bootstrap.sh
+
+test: ut it
+
+# Coverage: instrumented UT + IT, gcovr report + threshold gate.
+cov:
+	tests/tools/coverage.sh
+
+# Mutation testing: Mull instrumented UT + score gate.
+mutate:
+	tests/tools/mutate.sh
+
+# AddressSanitizer + UBSan build of the unit suite (leak-checked).
+ASAN_BIN := $(UT_BIN)-asan
+ut-asan: check-tools $(UT_SRCS) $(UT_LIB_SRCS)
+	$(CC) $(TEST_CFLAGS) -fsanitize=address,undefined -fno-omit-frame-pointer \
+	    -o $(ASAN_BIN) $(UT_SRCS) $(UT_LIB_SRCS) $(TEST_LDFLAGS) \
+	    $(LDLIBS) $(CMOCKA_LDFLAGS) -fsanitize=address,undefined
+	ASAN_OPTIONS=detect_leaks=1 ./$(ASAN_BIN)
+
 debug:
-	$(MAKE) MCP_DEBUG=1 all
+	$(MAKE) HTTP_DEBUG=1 all
+
+# Regenerate compile_commands.json for clangd / VS Code IntelliSense.
+# Needs `bear` (apt install bear).  Clean build so every file is captured.
+compdb:
+	bear -- $(MAKE) clean all
+	@echo "compile_commands.json regenerated"
 
 # ── Shared library ───────────────────────────────────
 
@@ -92,7 +186,7 @@ $(TARGET_CLI): $(CLI_OBJS)
 # ── Examples ─────────────────────────────────────────
 
 example_server: tests/example_server.c $(TARGET_STATIC)
-	$(CC) $(CFLAGS) -rdynamic -o $@ $< $(TARGET_STATIC) $(LDLIBS)
+	$(CC) $(CFLAGS) -o $@ $< $(TARGET_STATIC) $(LDLIBS)
 
 # ── pkg-config ───────────────────────────────────────
 
@@ -106,7 +200,7 @@ $(PKG_CONFIG):
 	    "includedir=$${prefix}/include" \
 	    '' \
 	    "Name: FluxIPC" \
-	    "Description: Lightweight namespace-tree IPC library with shared-memory registry" \
+	    "Description: Namespace-tree IPC library with a standard HTTP interface" \
 	    "Version: $(VERSION)" \
 	    "Libs: -L$${libdir} -lfluxipc -lpthread -lrt -lreadline" \
 	    "Cflags: -I$${includedir}" \
@@ -152,8 +246,8 @@ clean:
 	rm -f $(TARGET_STATIC)
 	rm -f $(TARGET_CLI)
 	rm -f example_server
+	rm -f $(UT_BIN) $(ASAN_BIN) $(IT_BIN)
 	rm -f $(PKG_CONFIG)
-	rm -f /dev/shm/fluxipc_*
 	rm -f /tmp/fluxipc_*.sock
 
 distclean: clean
