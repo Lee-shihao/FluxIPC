@@ -23,7 +23,8 @@
  *   Bare name "calibrate" → resolved relative to cwd node
  *   Absolute "/module/sensor/calibrate" always works.
  *
- * Discovery: shm regions are read from /run/&lt;name&gt;-fluxipc/ directories.
+ * Discovery: running servers are found by scanning the per-user run directory
+ * and each server is queried for its leaf manifest over its Unix socket.
  */
 
 #include "fluxipc_internal.h"
@@ -244,20 +245,42 @@ static void update_prompt(void)
                  g_cwd_node->full_path);
 }
 
-/* ─── SHM loading ─────────────────────────────────────────────────────────── */
+/* ─── Endpoint loading (socket introspection) ─────────────────────────────── */
 
-static void tree_add_entry(const fluxipc_shm_entry_t *e)
+static void tree_add_endpoint(const char *path, uint32_t id,
+                              const char *usage, const char *sock_path)
 {
-    path_node_t *node = tree_insert_path(e->path);
+    path_node_t *node = tree_insert_path(path);
     if (!node) return;
 
     node->is_leaf = 1;
-    snprintf(node->usage,     sizeof(node->usage),     "%s", e->usage);
-    snprintf(node->sock_path, sizeof(node->sock_path), "%s", e->sock_path);
-    node->id = e->id;
+    snprintf(node->usage,     sizeof(node->usage),     "%s", usage ? usage : "");
+    snprintf(node->sock_path, sizeof(node->sock_path), "%s", sock_path);
+    node->id = id;
 }
 
-static void load_all_shm(void)
+typedef struct { const char *sock_path; } load_cb_ctx_t;
+
+static void load_list_cb(const char *path, uint32_t id,
+                         const char *usage, void *userdata)
+{
+    load_cb_ctx_t *lc = userdata;
+    if (node_lookup(path)) return;          /* dedup across servers */
+    tree_add_endpoint(path, id, usage, lc->sock_path);
+}
+
+static int load_local_leaf_cb(const fluxipc_node_t *leaf, void *userdata)
+{
+    load_cb_ctx_t *lc = userdata;
+    const char *path = fluxipc_node_path(leaf);
+    if (node_lookup(path)) return 0;
+    const fluxipc_method_t *m = fluxipc_node_method(leaf);
+    tree_add_endpoint(path, leaf->id,
+                      (m && m->summary) ? m->summary : "", lc->sock_path);
+    return 0;
+}
+
+static void load_all_endpoints(void)
 {
     char saved_cwd[FLUXIPC_PATH_MAX] = "";
     if (g_cwd_node)
@@ -265,9 +288,15 @@ static void load_all_shm(void)
 
     tree_clear();
 
-    /* Scan /run/user/<uid>/ for *-fluxipc server dirs */
+    /* Scan /run/user/<uid>/ for *-fluxipc server dirs and query each socket.
+     * FLUXIPC_SCAN_DIR overrides the directory (used by the unit tests so a
+     * parallel mutation run cannot see another worker's servers). */
     char scan_dir[PATH_MAX];
-    snprintf(scan_dir, sizeof(scan_dir), "/run/user/%d", getuid());
+    const char *scan_override = getenv("FLUXIPC_SCAN_DIR");
+    if (scan_override && scan_override[0])
+        snprintf(scan_dir, sizeof(scan_dir), "%s", scan_override);
+    else
+        snprintf(scan_dir, sizeof(scan_dir), "/run/user/%d", getuid());
 
     DIR *d = opendir(scan_dir);
     if (d) {
@@ -295,35 +324,29 @@ static void load_all_shm(void)
             memcpy(prog, ent->d_name, prog_len);
             prog[prog_len] = '\0';
 
-            fluxipc_shm_t *shm = shm_open_existing(prog);
-            if (!shm) {
-                fprintf(stderr, "fluxipc: cannot open shm for '%s', skipping\n",
-                        prog);
-                continue;
-            }
+            /* Never query our own server: the REPL blocks its poll loop. */
+            if (g_ctx && strcmp(prog, g_ctx->prog_name) == 0) continue;
 
-            pthread_rwlock_rdlock((pthread_rwlock_t *)&shm->lock);
-            for (int i = 0; i < FLUXIPC_SHM_MAX_ENTRIES; i++) {
-                if (shm->entries[i].flags & FLUXIPC_FLAG_ACTIVE)
-                    tree_add_entry(&shm->entries[i]);
-            }
-            pthread_rwlock_unlock((pthread_rwlock_t *)&shm->lock);
-            shm_close_existing(shm);
+            /* Derive the socket path from the same root we scanned, so a
+             * FLUXIPC_SCAN_DIR override stays entirely self-contained. */
+            char sock[FLUXIPC_PATH_MAX];
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-truncation"
+            snprintf(sock, sizeof(sock),
+                     "%s/%s-fluxipc/%s.sock", scan_dir, prog, prog);
+#pragma GCC diagnostic pop
+
+            load_cb_ctx_t lc = { sock };
+            if (fluxipc_list_endpoints(prog, load_list_cb, &lc) < 0)
+                fprintf(stderr, "fluxipc: cannot query '%s', skipping\n", prog);
         }
         closedir(d);
     }
 
-    /* In-process server entries (dedup via tree lookup) */
-    if (g_ctx && g_ctx->shm) {
-        pthread_rwlock_rdlock(&g_ctx->shm->lock);
-        for (int i = 0; i < FLUXIPC_SHM_MAX_ENTRIES; i++) {
-            if (!(g_ctx->shm->entries[i].flags & FLUXIPC_FLAG_ACTIVE))
-                continue;
-            if (node_lookup(g_ctx->shm->entries[i].path))
-                continue;
-            tree_add_entry(&g_ctx->shm->entries[i]);
-        }
-        pthread_rwlock_unlock(&g_ctx->shm->lock);
+    /* In-process server (if this process also runs one): read the tree. */
+    if (g_ctx) {
+        load_cb_ctx_t lc = { g_ctx->sock_path };
+        fluxipc_node_leaves(g_ctx->root, load_local_leaf_cb, &lc);
     }
 
     /* Restore cwd if still valid */
@@ -418,6 +441,12 @@ static void build_candidates(const char *text)
     path_node_t *parent      = NULL;
     const char  *partial     = "";
     char         cand_prefix[FLUXIPC_PATH_MAX] = "";  /* prepended to every candidate */
+    /*
+     * `partial` below points into this buffer, so it must outlive the
+     * is_absolute/relative branches (previously each branch declared its own
+     * `buf`, leaving `partial` dangling when strlen(partial) ran later).
+     */
+    char         buf[FLUXIPC_PATH_MAX];
 
     if (is_absolute) {
         /* Split at last / to find parent node and partial component */
@@ -425,7 +454,6 @@ static void build_candidates(const char *text)
             parent  = g_root;
             partial = "";
         } else {
-            char buf[FLUXIPC_PATH_MAX];
             snprintf(buf, sizeof(buf), "%s", effective);
             char *last_slash = strrchr(buf, '/');
 
@@ -450,7 +478,6 @@ static void build_candidates(const char *text)
         g_cand_relative = 0;
     } else {
         /* Relative completion – may contain / for nested paths */
-        char buf[FLUXIPC_PATH_MAX];
         snprintf(buf, sizeof(buf), "%s", effective);
         char *slash = strchr(buf, '/');
 
@@ -737,7 +764,7 @@ static void cmd_help(const char *arg)
         printf("  %-12s – show this help\n", "help");
         printf("  %-12s – change namespace (cd / to return to root)\n",
                "cd <path>");
-        printf("  %-12s – refresh registry from shared memory\n", "reload");
+        printf("  %-12s – re-scan running servers and refresh the registry\n", "reload");
         printf("  %-12s – call endpoint every s seconds (default 1)\n",
                "watch [s] <p>");
         printf("  %-12s – quit the shell\n\n", "exit");
@@ -1198,7 +1225,7 @@ static void dispatch(const char *line)
     const char *cmd = tokens[0];
 
     if (strcmp(cmd, "ls")     == 0) { cmd_ls(); return; }
-    if (strcmp(cmd, "reload") == 0) { load_all_shm();
+    if (strcmp(cmd, "reload") == 0) { load_all_endpoints();
                                       printf("  Registry reloaded.\n\n"); return; }
     if (strcmp(cmd, "watch")  == 0) { cmd_watch(ntok, tokens); return; }
     if (strcmp(cmd, "help")   == 0) { cmd_help(ntok > 1 ? tokens[1] : NULL); return; }
@@ -1303,7 +1330,7 @@ int fluxipc_interactive_init(const char *prog_name)
     (void)prog_name;
     tree_init();
     update_prompt();
-    load_all_shm();
+    load_all_endpoints();
 
     rl_attempted_completion_function = fluxipc_completer;
     rl_completion_append_character   = '\0';
@@ -1314,7 +1341,7 @@ int fluxipc_interactive_init(const char *prog_name)
     printf("  cd <path>        – change namespace (cd / to return to root)\n");
     printf("  ls               – show endpoints under current namespace\n");
     printf("  help [path]      – show built-in commands, or details for one endpoint\n");
-    printf("  reload           – refresh registry from shared memory\n");
+    printf("  reload           – re-scan running servers and refresh the registry\n");
     printf("  watch [s] <path> – call endpoint every s seconds (default 1)\n");
     printf("  exit             – quit\n");
     printf("\nRange syntax (inline per argument):\n");

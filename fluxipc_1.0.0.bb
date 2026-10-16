@@ -12,8 +12,8 @@ S = "${WORKDIR}/FluxIPC-main"
 
 inherit pkgconfig
 
-# readline 依赖
-DEPENDS += "readline"
+# readline + cJSON 依赖
+DEPENDS += "readline cjson"
 
 # ─────────────────────────────────────────────
 # Build
@@ -62,5 +62,5 @@ FILES:${PN}-dbg += "\
 # 避免开发链接检查误报
 INSANE_SKIP:${PN} += "dev-so"
 
-# readline runtime dependency
-RDEPENDS:${PN} += "readline"
+# readline + cJSON runtime dependency
+RDEPENDS:${PN} += "readline cjson"

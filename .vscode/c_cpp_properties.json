@@ -1,0 +1,31 @@
+{
+  // Fallback configuration for the MS C/C++ extension (cpptools).
+  // Only relevant if you turn clangd OFF and set
+  //   "C_Cpp.intelliSenseEngine": "default"
+  // in settings.json.  It points IntelliSense at the same compilation
+  // database clangd uses, so go-to-definition resolves identically.
+  "version": 4,
+  "configurations": [
+    {
+      "name": "Linux",
+      "compileCommands": "${workspaceFolder}/compile_commands.json",
+      "includePath": [
+        "${workspaceFolder}/include"
+      ],
+      "defines": [
+        "_GNU_SOURCE"
+      ],
+      "cStandard": "gnu11",
+      "intelliSenseMode": "linux-gcc-x64",
+      "browse": {
+        "path": [
+          "${workspaceFolder}/include",
+          "${workspaceFolder}/src",
+          "${workspaceFolder}/cli",
+          "${workspaceFolder}/tests"
+        ],
+        "limitSymbolsToIncludedHeaders": true
+      }
+    }
+  ]
+}

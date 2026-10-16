@@ -1,0 +1,25 @@
+# Mull mutation-testing configuration for FluxIPC.
+#
+# Docs: https://mull.readthedocs.io/
+#
+# Scope: mutate the library sources (src/) only; test code and the CLI are
+# excluded.  Mutators are chosen to be semantically meaningful for a C library
+# (arithmetic / comparison / logical / calls / negation / constants).
+
+mutators:
+  - cxx_default          # assignment, increment/decrement, arithmetic,
+                         # comparison, boundary, bitwise, calls
+  - cxx_logical          # && <-> ||
+  - cxx_remove_negation  # drop a leading ! in conditions
+
+excludePaths:
+  - 'tests/.*'
+  - '.*/tests/.*'
+  - 'cli/.*'
+  - '.*/cli/.*'
+
+# NOTE: do not set `parallelization:` here — the clang-14 frontend plugin in
+# mull-14 0.34.1 silently produces zero mutants when that key is present at
+# compile time.  Worker count is configured on the runner CLI instead.
+
+timeout: 3000

@@ -1,102 +1,50 @@
 #pragma once
 
 #include "fluxipc.h"
-#include <stdatomic.h>
 #include <pthread.h>
-#include <sys/types.h>
 
 /* ─── Paths ───────────────────────────────────────────────────────────────── */
 /*
  * Per-app runtime layout:
- *   socket  : /run/<appname>-fluxipc/<appname>.sock
- *   symlinks: /run/<appname>-fluxipc/<ipc-path>   (one symlink per endpoint)
- *   shm     : POSIX /fluxipc.<appname>             (/dev/shm/fluxipc.<appname>)
+ *   socket: /run/user/<uid>/<appname>-fluxipc/<appname>.sock
  *
- * The per-app directory name is "<appname>-fluxipc".
- * This gives each server its own directory under /run, avoids collisions,
- * and lets ordinary users invoke client symlinks without privilege.
- *
- * Directory permissions are 0755 (root creates, world-readable).
+ * Directory permissions are 0755 (world-readable).
  * Socket permissions are 0666 so unprivileged clients can connect.
- * SHM permissions are 0644 so unprivileged clients can mmap read-only,
- * but the rwlock embedded in shm is opened RDWR (kernel allows this for
- * futex-based locks even with read-only mapping on many kernels; we open
- * RDWR from client side for the rwlock to work, which is safe because
- * clients only call pthread_rwlock_rdlock).
  */
 
-/* Build the per-app run directory path: /run/<appname>-fluxipc */
-#define FLUXIPC_APP_RUN_DIR(appname_buf, sz, appname) \
-    snprintf((appname_buf), (sz), "/run/%s-fluxipc", (appname))
+/* ─── Wire protocol (minimum viable, 12-byte header) ──────────────────────── */
+/*
+ * Request  = fluxipc_req_hdr_t, then `path_len` path bytes, then `arg_len`
+ *            bytes of NUL-terminated argv strings.
+ * Response = fluxipc_resp_hdr_t, then `data_len` payload bytes.
+ *
+ * op == FLUXIPC_OP_CALL → invoke the leaf's IPC handler (raw byte reply)
+ * op == FLUXIPC_OP_LIST → return the whole leaf manifest (JSON reply)
+ */
+#define FLUXIPC_PROTO_MAGIC   0x464C5832UL  /* "FLX2" (bump on protocol change) */
+#define FLUXIPC_OP_CALL       1
+#define FLUXIPC_OP_LIST       2
 
-/* sun_path is 108 bytes; "/run/<63-char-name>-fluxipc/<63>.sock" = ~80 chars max */
-#define FLUXIPC_SOCK_SUFFIX   ".sock"
-
-/* POSIX shm name: /fluxipc.<appname> */
-#define FLUXIPC_SHM_PREFIX    "/fluxipc."
-
-/* ─── Shared-memory layout ────────────────────────────────────────────────── */
-#define FLUXIPC_SHM_MAGIC         0x464C5849UL   /* "FLXI" */
-#define FLUXIPC_SHM_VERSION       1
-#define FLUXIPC_SHM_MAX_ENTRIES   512
-
-#define FLUXIPC_FLAG_ACTIVE   (1u << 0)
-#define FLUXIPC_FLAG_STATIC   (1u << 1)
-
-typedef struct {
-    char     path[FLUXIPC_PATH_MAX];
-    char     usage[FLUXIPC_USAGE_MAX];
-    uint32_t id;
-    uint32_t flags;
-    size_t   slot_data_sz;
-    pid_t    owner_pid;
-    char     sock_path[FLUXIPC_PATH_MAX];
-} fluxipc_shm_entry_t;
-
-typedef struct {
-    uint32_t             magic;
-    uint32_t             version;
-    char                 prog_name[FLUXIPC_NAME_MAX];
-    char                 sock_path[FLUXIPC_PATH_MAX];
-    atomic_uint          entry_count;
-    atomic_uint          next_id;
-    pthread_rwlock_t     lock;
-    fluxipc_shm_entry_t  entries[FLUXIPC_SHM_MAX_ENTRIES];
-} fluxipc_shm_t;
-
-/* ─── Wire protocol ───────────────────────────────────────────────────────── */
-#define FLUXIPC_PROTO_MAGIC   0x464C5850UL  /* "FLXP" */
-#define FLUXIPC_PROTO_VERSION 1
-
-/** Request sent over Unix socket (followed by payload bytes for args) */
 typedef struct {
     uint32_t magic;
-    uint32_t version;
-    uint32_t id;
-    char     path[FLUXIPC_PATH_MAX];
-    int      argc;
-    uint32_t total_arg_len;
-} __attribute__((packed)) fluxipc_req_hdr_t;
+    uint16_t op;
+    uint16_t path_len;
+    uint32_t arg_len;
+} __attribute__((packed)) fluxipc_req_hdr_t;   /* 12 bytes */
 
-/** Response sent back over socket */
 typedef struct {
     uint32_t magic;
-    uint32_t version;
     int32_t  status;
     uint32_t data_len;
-} __attribute__((packed)) fluxipc_resp_hdr_t;
+} __attribute__((packed)) fluxipc_resp_hdr_t;  /* 12 bytes */
 
 /* ─── Tree node ───────────────────────────────────────────────────────────── */
 struct fluxipc_node {
     char                name[FLUXIPC_NAME_MAX];
     char                full_path[FLUXIPC_PATH_MAX];
-    char                usage[FLUXIPC_USAGE_MAX];
-    size_t              slot_data_sz;
-    fluxipc_handler_fn  handler;
-    void               *data;
-    uint32_t            id;
-    uint32_t            shm_idx;
+    fluxipc_method_t    method;       /* copied; strings owned by the node */
     int                 is_leaf;
+    uint32_t            id;
 
     struct fluxipc_node *parent;
     struct fluxipc_node *children;
@@ -108,52 +56,115 @@ typedef struct fluxipc_ctx_s {
     char              prog_name[FLUXIPC_NAME_MAX];
     char              run_dir[FLUXIPC_PATH_MAX];
     char              sock_path[FLUXIPC_PATH_MAX];
-    char              shm_name[FLUXIPC_NAME_MAX + 16];
     int               server_fd;
-    int               shm_fd;
-    fluxipc_shm_t    *shm;
-    size_t            shm_size;
     fluxipc_node_t   *root;
     pthread_mutex_t   tree_lock;
     volatile int      running;
     uint32_t          next_id;
-    int               mcp_fd;   /* TCP listener fd; -1 if MCP not started */
+    int               http_fd;     /* TCP listener fd; -1 if HTTP disabled */
 
-    /* Global request observation hooks (see fluxipc_set_request_hooks) */
+    /* Global request observation hooks */
     fluxipc_request_hook_fn pre_hook;
     fluxipc_request_hook_fn post_hook;
     void                   *hook_user;
-} fluxipc_ctx_t;  /* also known as struct fluxipc_ctx_s */
+} fluxipc_ctx_t;
 
 extern fluxipc_ctx_t *g_ctx;
 
-/* ─── MCP server (internal) ────────────────────────────────────────────────── */
-int  fluxipc_mcp_start(fluxipc_ctx_t *ctx, uint16_t port);
-int  fluxipc_mcp_poll(fluxipc_ctx_t *ctx);
-void fluxipc_mcp_stop(fluxipc_ctx_t *ctx);
+/* ─── Unified connection layer (fluxipc_conn.c) ───────────────────────────── */
+#define FLUXIPC_MAX_CONNS   32
+#define FLUXIPC_RBUF_MAX    (512 * 1024)   /* max request bytes per conn */
 
-/* ─── Internal helpers ────────────────────────────────────────────────────── */
-fluxipc_node_t *tree_find(fluxipc_node_t *root, const char *path);
-fluxipc_node_t *tree_insert(fluxipc_node_t *root, const char *path);
-void            tree_remove(fluxipc_node_t *node);
+typedef enum { FLUXIPC_CONN_UNIX = 0, FLUXIPC_CONN_HTTP } fluxipc_conn_kind_t;
+typedef enum { FLUXIPC_CONN_READING = 0, FLUXIPC_CONN_WRITING } fluxipc_conn_state_t;
+
+typedef struct fluxipc_conn {
+    int                  fd;
+    fluxipc_conn_kind_t  kind;
+    fluxipc_conn_state_t state;
+
+    char   *rbuf; size_t rlen, rcap;   /* request accumulation  */
+    char   *wbuf; size_t wlen, woff, wcap; /* response to flush */
+
+    size_t  need;      /* UNIX: complete request size once header parsed */
+    size_t  hdr_end;   /* HTTP: offset past \r\n\r\n                    */
+    size_t  body_len;  /* HTTP: Content-Length                          */
+} fluxipc_conn_t;
+
+/** Single-select event loop over both listeners and all connections. */
+int  conn_poll(fluxipc_ctx_t *ctx);
+/** Queue a response for @p c (copies @p len bytes); returns 0/-1. */
+int  conn_respond(fluxipc_conn_t *c, const void *data, size_t len);
+/** Close and free a connection slot. */
+void conn_close(fluxipc_conn_t *c);
+/** Close every pooled connection (shutdown). */
+void conn_pool_reset(void);
+/** Initialize the pool (call once before the event loop starts). */
+void conn_pool_init(void);
+/** Number of free connection slots (for tests / diagnostics). */
+int  conn_pool_free_count(void);
+
+/* Test-only hooks (compiled only with -DFLUXIPC_TESTING).  They expose the
+ * otherwise-static connection pool and state-machine steps so the unit suite
+ * can drive accept/read/write deterministically over socketpairs. */
+#ifdef FLUXIPC_TESTING
+fluxipc_conn_t *fluxipc_ut_conn(int idx);
+int             fluxipc_ut_conn_alloc(int fd, int kind);
+void            fluxipc_ut_conn_read(fluxipc_ctx_t *ctx, fluxipc_conn_t *c);
+void            fluxipc_ut_conn_write(fluxipc_conn_t *c);
+int             fluxipc_ut_pool_size(void);
+#endif
+
+/** Per-kind request processor: 0 = need more, 1 = handled, -1 = error. */
+int  sock_conn_process(fluxipc_ctx_t *ctx, fluxipc_conn_t *c);
+int  http_conn_process(fluxipc_ctx_t *ctx, fluxipc_conn_t *c);
+
+/* ─── HTTP server (listener only) ─────────────────────────────────────────── */
+int  fluxipc_http_start(fluxipc_ctx_t *ctx, uint16_t port);
+void fluxipc_http_stop(fluxipc_ctx_t *ctx);
+#define fluxipc_http_poll(ctx) conn_poll(ctx)
+
+/* ─── Dispatch ────────────────────────────────────────────────────────────── */
+/** Invoke a leaf's IPC handler (raw bytes). @return handler rc or -ENOENT. */
+int fluxipc_dispatch_ipc(fluxipc_ctx_t *ctx, const char *path,
+                         int argc, char **argv,
+                         char *out, size_t out_cap, size_t *out_len);
+
+/** Invoke a leaf's HTTP handler (JSON). @return handler rc or -ENOSYS. */
+int fluxipc_dispatch_http(fluxipc_ctx_t *ctx, fluxipc_http_request_t *req,
+                          fluxipc_http_response_t *resp);
+
+/**
+ * Build a JSON manifest of every leaf at or below @p node.
+ * @p recursive 0 lists only direct leaves; @p verbose adds description/schema.
+ * @return a cJSON object owned by the caller, or NULL on allocation failure.
+ */
+cJSON *fluxipc_build_manifest(fluxipc_node_t *node, int recursive, int verbose);
+
+/* ─── Tree helpers ────────────────────────────────────────────────────────── */
+fluxipc_node_t *tree_find_child(fluxipc_node_t *parent, const char *name);
+fluxipc_node_t *tree_find_path(fluxipc_node_t *root, const char *path);
+fluxipc_node_t *tree_mkdir(fluxipc_node_t *parent, const char *name);
+fluxipc_node_t *tree_leaf(fluxipc_node_t *parent, const char *name,
+                          const fluxipc_method_t *method);
+void            tree_node_free(fluxipc_node_t *node);
 void            tree_destroy(fluxipc_node_t *root);
 
-int  shm_open_create(fluxipc_ctx_t *ctx);
-int  shm_add_entry(fluxipc_ctx_t *ctx, fluxipc_node_t *node, int is_static);
-void shm_remove_entry(fluxipc_ctx_t *ctx, uint32_t shm_idx);
-void shm_close(fluxipc_ctx_t *ctx);
-fluxipc_shm_t *shm_open_existing(const char *prog_name);
-void           shm_close_existing(fluxipc_shm_t *shm);
-
+/* ─── Unix socket transport (listener + client) ───────────────────────────── */
 int  sock_server_create(fluxipc_ctx_t *ctx);
-int  sock_server_poll(fluxipc_ctx_t *ctx);
 void sock_server_close(fluxipc_ctx_t *ctx);
 
-int  symlink_create(const char *prog_name, const char *ipc_path,
-                    const char *run_dir);
-void symlink_remove(const char *prog_name, const char *ipc_path,
-                    const char *run_dir);
-void symlink_remove_all(const char *run_dir);
+/** Like fluxipc_call() but mallocs the response body (caller frees *out). */
+int  sock_call_alloc(const char *sock_path, uint16_t op, const char *ipc_path,
+                     int argc, char **argv, char **out, size_t *out_len);
 
-int  client_ipc_path(const char *argv0, const char *prog_name,
-                     char *out_path, size_t path_sz);
+/* ─── Pure helpers (fluxipc_util.c) ───────────────────────────────────────── */
+size_t fluxipc_url_decode(const char *src, size_t slen, char *dst, size_t cap);
+int    fluxipc_parse_query(const char *raw, size_t rawlen,
+                           fluxipc_kv_t *kv, int max_kv,
+                           char *arena, size_t arena_cap);
+size_t fluxipc_find_content_length(const char *buf, size_t hbytes);
+
+/* ─── Misc helpers ────────────────────────────────────────────────────────── */
+int  fluxipc_method_to_mask(const char *method);
+const char *fluxipc_mask_to_method(uint32_t bit);
