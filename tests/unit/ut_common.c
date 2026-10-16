@@ -148,7 +148,7 @@ const char *ut_capture_end(void)
 /* ── handler stubs ───────────────────────────────────────────────────────── */
 
 int ut_ipc_echo(void *data, int argc, char **argv,
-                char *out, size_t out_cap, size_t *out_len)
+                void *out, size_t out_cap, size_t *out_len)
 {
     (void)argc; (void)argv;
     const char *msg = data ? (const char *)data : "";

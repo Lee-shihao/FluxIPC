@@ -56,15 +56,15 @@ typedef struct {
  * @param data    the method's data pointer
  * @param argc    argument count; argv[0] is the endpoint path
  * @param argv    argument vector
- * @param out     output buffer
- * @param out_cap capacity of @p out
+ * @param out_buf output buffer (the main-branch signature uses @c void *)
+ * @param out_cap capacity of @p out_buf
  * @param out_len set to the number of bytes written
  * @return 0 on success, negative errno on error
  */
 typedef int (*fluxipc_handler_fn)(void   *data,
                                   int     argc,
                                   char  **argv,
-                                  char   *out,
+                                  void   *out_buf,
                                   size_t  out_cap,
                                   size_t *out_len);
 
@@ -125,9 +125,9 @@ typedef struct {
 /**
  * Convenience initialiser: FLUXIPC_METHOD(ipc_fn, http_fn, summary, schema,
  * methods).  Produces a compound literal, so it can be passed by address to
- * fluxipc_node_leaf() / fluxipc_register() or stored in a static table:
+ * fluxipc_node_leaf() / fluxipc_register_method() or stored in a static table:
  *
- *     fluxipc_register("/greet/hello", &FLUXIPC_METHOD(
+ *     fluxipc_register_method("/greet/hello", &FLUXIPC_METHOD(
  *         hello_ipc, hello_http, "Say hello", NULL, FLUXIPC_M_GET));
  */
 #define FLUXIPC_METHOD(ipc_fn, http_fn, sum, schema_json, masks) \
@@ -152,7 +152,7 @@ fluxipc_node_t *fluxipc_node_mkdir(fluxipc_node_t *parent, const char *name);
 
 /**
  * Register a leaf method under @p parent.  Low-level primitive; prefer
- * fluxipc_register() unless you already hold the parent container.
+ * fluxipc_register_method() unless you already hold the parent container.
  * Returns a borrowed handle, or NULL (errno set; EEXIST if already present).
  */
 fluxipc_node_t *fluxipc_node_leaf(fluxipc_node_t *parent,
@@ -165,24 +165,58 @@ fluxipc_node_t *fluxipc_node_find(fluxipc_node_t *parent, const char *name);
 /* ─── High-level registration ─────────────────────────────────────────────── */
 
 /**
- * Register a leaf at an absolute namespace path, creating every missing
- * intermediate container on the way.  This is the concise alternative to
- * hand-walking fluxipc_node_mkdir():
+ * Register a leaf from a full method descriptor (path-based).  Creates every
+ * missing intermediate container on the way:
  *
- *     fluxipc_register("/module/sensor/status", &FLUXIPC_METHOD(
+ *     fluxipc_register_method("/module/sensor/status", &FLUXIPC_METHOD(
  *         status_ipc, status_http, "Read the sensor", NULL, FLUXIPC_M_GET));
  *
  * The method is copied exactly like fluxipc_node_leaf(), so passing a stack
  * temporary or a compound literal is safe.  The call is atomic: on failure no
  * half-created containers are left behind.
  *
+ * Registering the same path again is allowed and merges the two calls: only
+ * still-empty handlers/metadata are filled, so an IPC-only registration can be
+ * completed later by an HTTP-only one (and vice versa).  The HTTP method mask
+ * belongs to whichever call first attaches an HTTP handler.
+ *
  * @param path    absolute path, e.g. "/a/b/c" (leading '/' required).
- * @param method  metadata + at least one handler.
+ * @param method  metadata + at least one handler (ipc and/or http).
  * @return borrowed leaf handle, or NULL with errno set
- *         (EINVAL bad path/method, EEXIST name already taken, ENOMEM).
+ *         (EINVAL bad path/method, EEXIST name is a container, ENOMEM).
  */
-fluxipc_node_t *fluxipc_register(const char *path,
-                                 const fluxipc_method_t *method);
+fluxipc_node_t *fluxipc_register_method(const char *path,
+                                        const fluxipc_method_t *method);
+
+/**
+ * Classic main-branch registration: register an IPC endpoint at @p path.
+ *
+ *     fluxipc_register("/devices/foo/name", "[<new-name>]", 0, handler, ctx);
+ *
+ * @p usage becomes the leaf summary.  @p slot_sz is accepted for source
+ * compatibility only: the shared-memory slots of the old architecture are gone
+ * and the value is ignored.  The HTTP side can be added later with
+ * fluxipc_register_http(); re-registering the same path merges instead of
+ * overwriting.
+ *
+ * @return borrowed leaf handle, or NULL with errno set.
+ */
+fluxipc_node_t *fluxipc_register(const char *path, const char *usage,
+                                 size_t slot_sz,
+                                 fluxipc_handler_fn handler, void *data);
+
+/**
+ * Register the HTTP side of an endpoint (the @c ipc field is normally NULL).
+ * Requires @c method->http.  Merges into an existing leaf of the same path, so
+ * it is the natural companion for an earlier fluxipc_register() call:
+ *
+ *     fluxipc_register     ("/greet/hello", "Say hello", 0, hello_ipc, NULL);
+ *     fluxipc_register_http("/greet/hello", &FLUXIPC_METHOD(NULL, hello_http, ...));
+ *
+ * @return borrowed leaf handle, or NULL with errno set.
+ */
+fluxipc_node_t *fluxipc_register_http(const char *path,
+                                      const fluxipc_method_t *method);
 
 /** One row of a static registration table (see fluxipc_register_all()). */
 typedef struct {
@@ -192,10 +226,60 @@ typedef struct {
 
 /**
  * Register an array of endpoints in one call.  Every row is registered with
- * fluxipc_register(); the first failure stops the loop.
+ * fluxipc_register_method(); the first failure stops the loop.
  * @return 0 on success, or the negative errno of the offending entry.
  */
 int fluxipc_register_all(const fluxipc_endpoint_t *endpoints, size_t count);
+
+/** Main-branch alias for fluxipc_node_remove(). */
+void fluxipc_unregister(fluxipc_node_t *node);
+
+/* ─── Compile-time registration (main-branch FLUXIPC_STATIC) ──────────────── */
+
+/**
+ * One compile-time endpoint.  Created by FLUXIPC_STATIC() and queued by a
+ * constructor at load time; fluxipc_server_init() then registers every queued
+ * entry.  The opaque @c next link is owned by the registry — do not touch it.
+ */
+typedef struct fluxipc_entry {
+    const char           *path;
+    const char           *usage;
+    size_t                slot_data_sz;
+    fluxipc_handler_fn    handler;
+    void                 *data;
+    struct fluxipc_entry *next;
+} fluxipc_entry_t;
+
+/** Internal: called by the FLUXIPC_STATIC() constructor.  Not for direct use. */
+void fluxipc_static_add(fluxipc_entry_t *entry);
+
+#define FLUXIPC_PP_CAT_(a, b) a##b
+#define FLUXIPC_PP_CAT(a, b)  FLUXIPC_PP_CAT_(a, b)
+
+/**
+ * FLUXIPC_STATIC – declare a compile-time IPC endpoint (main-branch API).
+ *
+ * The entry is queued before @c main() and registered by
+ * fluxipc_server_init(), so no @c -rdynamic / linker section is required.
+ * @p usage becomes the leaf summary; @p slot_sz is accepted and ignored.
+ *
+ *     static int hello(void *d, int argc, char **argv,
+ *                      void *out, size_t cap, size_t *len) { ... }
+ *     FLUXIPC_STATIC("/greet/hello", "say hello", 0, hello, NULL);
+ */
+#define FLUXIPC_STATIC(ipc_path, usage_str, slot_sz, handler_fn, ctx)        \
+    static fluxipc_entry_t FLUXIPC_PP_CAT(_fluxipc_static_, __LINE__) = {    \
+        .path         = (ipc_path),                                          \
+        .usage        = (usage_str),                                         \
+        .slot_data_sz = (size_t)(slot_sz),                                   \
+        .handler      = (handler_fn),                                        \
+        .data         = (void *)(ctx),                                       \
+    };                                                                       \
+    __attribute__((constructor, used))                                       \
+    static void FLUXIPC_PP_CAT(_fluxipc_static_ctor_, __LINE__)(void)        \
+    {                                                                        \
+        fluxipc_static_add(&FLUXIPC_PP_CAT(_fluxipc_static_, __LINE__));     \
+    }
 
 /** Remove a leaf, or a whole container subtree.  Prunes empty ancestors. */
 void fluxipc_node_remove(fluxipc_node_t *node);

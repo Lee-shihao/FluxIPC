@@ -58,7 +58,7 @@ const char *ut_capture_end(void);
 
 /** Simple IPC handler that copies @p msg (the method's data) into @p out. */
 int ut_ipc_echo(void *data, int argc, char **argv,
-                char *out, size_t out_cap, size_t *out_len);
+                void *out, size_t out_cap, size_t *out_len);
 
 /** HTTP handler that stores @c data into a JSON object {"handler":data}. */
 int ut_http_ok(void *data, const fluxipc_http_request_t *req,

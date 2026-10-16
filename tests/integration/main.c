@@ -51,7 +51,7 @@ static void stop_server(void)
 }
 
 static int ipc(const char *sock, const char *path,
-               int argc, char **argv, char *out, size_t cap, size_t *len)
+               int argc, char **argv, void *out, size_t cap, size_t *len)
 {
     return fluxipc_call(sock, path, argc, argv, out, cap, len);
 }
@@ -143,6 +143,14 @@ int main(void)
         CHECK(rc < 0);
     }
 
+    /* ── compile-time endpoint (FLUXIPC_STATIC) ── */
+    {
+        char *av1[1] = { (char *)"/system/compiled" };
+        rc = ipc(sock, "/system/compiled", 1, av1, out, sizeof(out), NULL);
+        CHECK_EQ_INT(rc, 0);
+        CHECK(strstr(out, "compiled endpoint: FLUXIPC_STATIC") != NULL);
+    }
+
     /* ── endpoint listing (OP_LIST) ── */
     {
         int n = 0;
@@ -166,6 +174,10 @@ int main(void)
     rc = http_get(HTTP_PORT, "/does/not/exist", resp, sizeof(resp), "127.0.0.1");
     CHECK(strstr(resp, "HTTP/1.1 404") != NULL);
     CHECK(strstr(resp, "application/problem+json") != NULL);
+
+    /* FLUXIPC_STATIC registered IPC only, so HTTP reports 501 */
+    rc = http_get(HTTP_PORT, "/system/compiled", resp, sizeof(resp), "127.0.0.1");
+    CHECK(strstr(resp, "HTTP/1.1 501") != NULL);
 
     stop_server();
 

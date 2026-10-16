@@ -23,7 +23,7 @@ static fluxipc_node_t *make_root(void)
     return root;
 }
 
-static int dummy_ipc(void *d, int c, char **v, char *o, size_t n, size_t *l)
+static int dummy_ipc(void *d, int c, char **v, void *o, size_t n, size_t *l)
 {
     (void)d; (void)c; (void)v; (void)o; (void)n; (void)l;
     return 0;

@@ -75,14 +75,14 @@ fluxipc-cli example_server -c /demo/arithmetic/add 7 3
 
 ### 1. 注册端点
 
-注册是动态的、**基于路径**的。`fluxipc_register()` 接收一个绝对命名空间路径，并自动创建沿途缺失的每一级容器；`fluxipc_register_all()` 则一次注册整张静态表。二者都会复制方法描述符（处理器、`summary`、`description`、`schema`），因此传入栈上临时对象或 `FLUXIPC_METHOD` 复合字面量都是安全的。
+注册是动态的、**基于路径**的：辅助函数会自动创建沿途缺失的每一级容器。`fluxipc_register()` 保留 `main` 分支的经典签名 `(path, usage, slot_sz, handler, data)`，注册 IPC 端点；`fluxipc_register_method()` 接收完整的 `fluxipc_method_t`（IPC 和/或 HTTP）；`fluxipc_register_http()` 补挂 HTTP 端；`fluxipc_register_all()` 一次注册整张静态表。它们都会复制方法描述符（处理器、`summary`、`description`、`schema`），因此传入栈上临时对象或 `FLUXIPC_METHOD` 复合字面量都是安全的。
 
 ```c
 #include <fluxipc.h>
 
 /* IPC：位置参数 argv → 格式化文本（原始契约） */
 static int hello_ipc(void *data, int argc, char **argv,
-                     char *out, size_t cap, size_t *len)
+                     void *out, size_t cap, size_t *len)
 {
     const char *name = (argc > 1) ? argv[1] : "World";
     int n = snprintf(out, cap, "Hello, %s!", name);
@@ -110,14 +110,17 @@ int main(void)
 {
     fluxipc_server_init("myapp", 32100);            /* 传 0 表示禁用 HTTP */
 
-    /* 每个端点一行：元数据与两个处理器就地写清。 */
-    fluxipc_register("/greet/hello", &FLUXIPC_METHOD(
+    /* 一次调用写清完整方法：元数据与两个处理器。 */
+    fluxipc_register_method("/greet/hello", &FLUXIPC_METHOD(
         hello_ipc,          /* socket / CLI：原始字节 */
         hello_http,         /* HTTP：JSON       */
         "Say hello",
         "{\"type\":\"object\",\"properties\":"
         "{\"name\":{\"type\":\"string\"}}}",
         FLUXIPC_M_GET | FLUXIPC_M_POST));
+
+    /* ……或 main 分支的经典写法（仅 IPC）。 */
+    fluxipc_register("/greet/plain", "Say hello", 0, hello_ipc, NULL);
 
     while (fluxipc_poll(NULL) >= 0) { /* socket + HTTP */ }
 
@@ -141,7 +144,35 @@ fluxipc_register_all(endpoints, sizeof(endpoints) / sizeof(endpoints[0]));
 
 `FLUXIPC_METHOD_D(ipc, http, data, summary, schema, methods)` 与前者相同，只是额外设置每个叶子的 `data` 指针，用于有状态的处理器。
 
-`fluxipc_register()` 失败时是原子的：不会遗留创建到一半的容器，也不会剪除你自己创建的容器。
+#### 兼容 `main` 分支
+
+为 `main` 分支接口编写的代码可原样编译链接：
+
+- `fluxipc_register(path, usage, slot_sz, handler, data)`——`usage` 映射为叶子的 `summary`；`slot_sz`（旧的共享内存槽大小）仅为源码兼容而保留，会被忽略；处理器的 `void *out_buf` 参数与公共 `fluxipc_handler_fn` 一致；
+- `fluxipc_unregister(node)` 保留为 `fluxipc_node_remove(node)` 的别名；
+- `FLUXIPC_STATIC(path, usage, slot_sz, handler, ctx)` 声明编译期端点。条目在 `main()` 之前由构造函数排队，由 `fluxipc_server_init()` 安装，因此**不需要 `-rdynamic`，也不需要链接器段**。
+
+```c
+static int hello_ipc(void *d, int argc, char **argv,
+                     void *out, size_t cap, size_t *len) { /* ... */ }
+
+FLUXIPC_STATIC("/greet/compiled", "say hello", 0, hello_ipc, NULL);
+```
+
+#### 分离注册（IPC 与 HTTP 各自独立）
+
+对同一路径再次注册会**合并**到已有叶子上：只填充仍为空的字段，因此 IPC-only 的注册可以稍后用 `fluxipc_register_http()` 补上 HTTP，反之亦然。HTTP 方法掩码由首次挂上 HTTP 处理器的那次调用决定；已存在的处理器、元数据或 `data` 不会被覆盖。
+
+```c
+/* 经典 / IPC-only 注册（方法里的 http 也可以传 NULL）。 */
+fluxipc_register("/greet/hello", "Say hello", 0, hello_ipc, NULL);
+
+/* 稍后补上 HTTP 端（ipc 传 NULL）。 */
+fluxipc_register_http("/greet/hello", &FLUXIPC_METHOD(
+    NULL, hello_http, "Say hello", NULL, FLUXIPC_M_GET));
+```
+
+注册失败时是原子的：不会遗留创建到一半的容器，也不会剪除你自己创建的容器。
 
 编译/链接：
 
@@ -151,17 +182,19 @@ gcc -o myapp myapp.c $(pkg-config --cflags --libs fluxipc) -lcjson
 
 #### 更底层的节点 API
 
-`fluxipc_register()` 只是对节点原语的轻量封装；当需要在运行时动态修改树时，仍可使用这些原语：
+注册辅助函数只是对节点原语的轻量封装；当需要在运行时动态修改树时，仍可使用这些原语：
 
 | 函数 | 说明 |
 |------|------|
 | `fluxipc_tree_root()` | 根节点（在 `fluxipc_server_init` 之后可用） |
-| `fluxipc_register(path, &method)` | 注册叶子，并自动创建祖先容器 |
+| `fluxipc_register(path, usage, slot_sz, handler, data)` | main 分支经典注册（IPC） |
+| `fluxipc_register_method(path, &method)` | 注册完整方法；重复时合并 |
+| `fluxipc_register_http(path, &method)` | 注册 HTTP 端（合并，`ipc` 通常为 NULL） |
 | `fluxipc_register_all(table, count)` | 注册静态端点表 |
 | `fluxipc_node_mkdir(parent, name)` | 获取或创建容器子节点（幂等） |
 | `fluxipc_node_leaf(parent, name, &method)` | 在 `parent` 下创建叶子方法 |
 | `fluxipc_node_find(parent, name)` | 查找直接子节点 |
-| `fluxipc_node_remove(node)` | 删除叶子或整棵子树；自动剪枝空祖先 |
+| `fluxipc_node_remove(node)` / `fluxipc_unregister(node)` | 删除叶子或整棵子树；自动剪枝空祖先 |
 | `fluxipc_node_leaves(node, cb, user)` | **每个节点内置**：枚举其自身及以下的全部叶子 |
 
 ### 3. 处理器签名
@@ -173,7 +206,7 @@ gcc -o myapp myapp.c $(pkg-config --cflags --libs fluxipc) -lcjson
 
 ```c
 typedef int (*fluxipc_handler_fn)(void *data, int argc, char **argv,
-                                  char *out, size_t out_cap, size_t *out_len);
+                                  void *out_buf, size_t out_cap, size_t *out_len);
 ```
 
 **HTTP 处理器** —— 已解析请求，cJSON 响应：
@@ -368,7 +401,7 @@ COV_LINE_MIN=90  COV_BRANCH_MIN=78  MUT_SCORE_MIN=70  MUT_WORKERS=4
 | 门禁 | 目标 | 实测 |
 |------|------|------|
 | 行覆盖率（`src/`） | ≥ 90% | **95.8%** |
-| 分支覆盖率（`src/`） | ≥ 78% | **78.8%** |
+| 分支覆盖率（`src/`） | ≥ 78% | **79.1%** |
 | 变异分数 | > 70% | **78%** |
 | ASan + UBSan | 干净 | 干净 |
 
@@ -421,8 +454,11 @@ fork `example_server`，端到端地验证两种传输：IPC 调用（含参数�
 | 函数 | 说明 |
 |------|------|
 | `fluxipc_server_init(prog, http_port)` | 初始化 socket 与可选 HTTP（0 = 关闭） |
-| `fluxipc_register(path, method)` | 注册叶子，并自动创建祖先容器 |
+| `fluxipc_register(path, usage, slot_sz, handler, data)` | main 分支经典注册（IPC） |
+| `fluxipc_register_method(path, method)` | 注册完整方法；重复时合并 |
+| `fluxipc_register_http(path, method)` | 注册端点的 HTTP 端 |
 | `fluxipc_register_all(table, count)` | 注册静态 `fluxipc_endpoint_t` 表 |
+| `FLUXIPC_STATIC(path, usage, slot, handler, data)` | 编译期端点（构造函数排队） |
 | `fluxipc_tree_root()` | 根节点 |
 | `fluxipc_node_mkdir(parent, name)` | 获取或创建容器 |
 | `fluxipc_node_leaf(parent, name, method)` | 注册一个叶子 |

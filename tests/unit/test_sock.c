@@ -202,7 +202,7 @@ static int g_argc_seen;
 static char g_argv_seen[8][32];
 
 static int record_ipc(void *d, int argc, char **argv,
-                      char *out, size_t cap, size_t *len)
+                      void *out, size_t cap, size_t *len)
 {
     (void)d; (void)out; (void)cap;
     g_argc_seen = argc;

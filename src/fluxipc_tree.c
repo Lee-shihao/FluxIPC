@@ -165,6 +165,32 @@ fluxipc_node_t *tree_leaf(fluxipc_node_t *parent, const char *name,
     return n;
 }
 
+/*
+ * Merge @p src into an already-registered leaf.  This lets the IPC and HTTP
+ * sides of one endpoint be registered independently (and in either order):
+ * only fields that are still empty are filled, so the first registration of a
+ * given handler/metadata value is the one that is kept.  The HTTP method mask
+ * is owned by whichever call first attaches an HTTP handler.
+ */
+void tree_leaf_merge(fluxipc_node_t *node, const fluxipc_method_t *src)
+{
+    if (!node->method.ipc  && src->ipc)  node->method.ipc  = src->ipc;
+
+    int had_http = node->method.http != NULL;
+    if (!node->method.http && src->http) node->method.http = src->http;
+    if (src->http && src->methods && !had_http)
+        node->method.methods = src->methods;   /* the HTTP side owns the mask */
+
+    if (!node->method.data && src->data) node->method.data = src->data;
+
+    if (!node->method.summary     && src->summary)
+        node->method.summary     = dup_or_null(src->summary);
+    if (!node->method.description && src->description)
+        node->method.description = dup_or_null(src->description);
+    if (!node->method.schema      && src->schema)
+        node->method.schema      = dup_or_null(src->schema);
+}
+
 /* ─── Destroy ─────────────────────────────────────────────────────────────── */
 
 void tree_destroy(fluxipc_node_t *node)

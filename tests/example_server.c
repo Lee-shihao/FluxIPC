@@ -83,7 +83,7 @@ static int http_error(fluxipc_http_response_t *resp, int status, const char *msg
 static time_t g_start_time;
 
 static int system_info_ipc(void *d, int argc, char **argv,
-                          char *out, size_t cap, size_t *len)
+                          void *out, size_t cap, size_t *len)
 {
     (void)d; (void)argc; (void)argv;
     return ipc_out(out, cap, len, "program=example_server pid=%d uid=%d",
@@ -103,7 +103,7 @@ static int system_info_http(void *d, const fluxipc_http_request_t *r,
 }
 
 static int system_uptime_ipc(void *d, int argc, char **argv,
-                             char *out, size_t cap, size_t *len)
+                             void *out, size_t cap, size_t *len)
 {
     (void)d; (void)argc; (void)argv;
     long up = (long)(time(NULL) - g_start_time);
@@ -124,7 +124,7 @@ static int system_uptime_http(void *d, const fluxipc_http_request_t *r,
 }
 
 static int system_version_ipc(void *d, int argc, char **argv,
-                              char *out, size_t cap, size_t *len)
+                              void *out, size_t cap, size_t *len)
 {
     (void)d; (void)argc; (void)argv;
     return ipc_out(out, cap, len, "version=2.1.0 build_date=%s", __DATE__);
@@ -142,7 +142,7 @@ static int system_version_http(void *d, const fluxipc_http_request_t *r,
 }
 
 static int system_shutdown_ipc(void *d, int argc, char **argv,
-                               char *out, size_t cap, size_t *len)
+                               void *out, size_t cap, size_t *len)
 {
     (void)d; (void)argc; (void)argv;
     fluxipc_stop();
@@ -173,7 +173,7 @@ typedef struct {
 static sensor_state_t g_sensor = { 23.5, 58.2, 10 };
 
 static int sensor_status_ipc(void *d, int argc, char **argv,
-                             char *out, size_t cap, size_t *len)
+                             void *out, size_t cap, size_t *len)
 {
     (void)d; (void)argc; (void)argv;
     return ipc_out(out, cap, len,
@@ -196,7 +196,7 @@ static int sensor_status_http(void *d, const fluxipc_http_request_t *r,
 }
 
 static int sensor_calibrate_ipc(void *d, int argc, char **argv,
-                                char *out, size_t cap, size_t *len)
+                                void *out, size_t cap, size_t *len)
 {
     (void)d;
     const char *offset = (argc > 1) ? argv[1] : "0";
@@ -217,7 +217,7 @@ static int sensor_calibrate_http(void *d, const fluxipc_http_request_t *r,
 }
 
 static int sensor_config_ipc(void *d, int argc, char **argv,
-                             char *out, size_t cap, size_t *len)
+                             void *out, size_t cap, size_t *len)
 {
     (void)d;
     if (argc > 1) g_sensor.sample_rate_hz = atoi(argv[1]);
@@ -246,7 +246,7 @@ typedef struct { int speed_rpm; int position_deg; int enabled; } motor_state_t;
 static motor_state_t g_motor = { 1200, 90, 1 };
 
 static int motor_speed_ipc(void *d, int argc, char **argv,
-                           char *out, size_t cap, size_t *len)
+                           void *out, size_t cap, size_t *len)
 {
     (void)d;
     if (!g_motor.enabled) {
@@ -273,7 +273,7 @@ static int motor_speed_http(void *d, const fluxipc_http_request_t *r,
 }
 
 static int motor_position_ipc(void *d, int argc, char **argv,
-                              char *out, size_t cap, size_t *len)
+                              void *out, size_t cap, size_t *len)
 {
     (void)d; (void)argc; (void)argv;
     if (!g_motor.enabled) {
@@ -295,7 +295,7 @@ static int motor_position_http(void *d, const fluxipc_http_request_t *r,
 }
 
 static int motor_stop_ipc(void *d, int argc, char **argv,
-                          char *out, size_t cap, size_t *len)
+                          void *out, size_t cap, size_t *len)
 {
     (void)d; (void)argc; (void)argv;
     g_motor.enabled = 0;
@@ -325,7 +325,7 @@ static int g_log_level = 2;
 static int g_max_clients = 16;
 
 static int config_log_level_ipc(void *d, int argc, char **argv,
-                                char *out, size_t cap, size_t *len)
+                                void *out, size_t cap, size_t *len)
 {
     (void)d;
     if (argc > 1) {
@@ -356,7 +356,7 @@ static int config_log_level_http(void *d, const fluxipc_http_request_t *r,
 }
 
 static int config_max_clients_ipc(void *d, int argc, char **argv,
-                                  char *out, size_t cap, size_t *len)
+                                  void *out, size_t cap, size_t *len)
 {
     (void)d;
     if (argc > 1) g_max_clients = atoi(argv[1]);
@@ -384,7 +384,7 @@ static int config_max_clients_http(void *d, const fluxipc_http_request_t *r,
 static int g_counter = 0;
 
 static int demo_echo_ipc(void *d, int argc, char **argv,
-                         char *out, size_t cap, size_t *len)
+                         void *out, size_t cap, size_t *len)
 {
     (void)d;
     int off = snprintf(out, cap, "echo:");
@@ -415,7 +415,7 @@ static int demo_echo_http(void *d, const fluxipc_http_request_t *r,
 }
 
 static int demo_counter_ipc(void *d, int argc, char **argv,
-                            char *out, size_t cap, size_t *len)
+                            void *out, size_t cap, size_t *len)
 {
     (void)d; (void)argc; (void)argv;
     int val = __sync_fetch_and_add(&g_counter, 1);
@@ -434,7 +434,7 @@ static int demo_counter_http(void *d, const fluxipc_http_request_t *r,
 }
 
 static int demo_add_ipc(void *d, int argc, char **argv,
-                        char *out, size_t cap, size_t *len)
+                        void *out, size_t cap, size_t *len)
 {
     (void)d;
     int a = (argc > 1) ? atoi(argv[1]) : 0;
@@ -457,7 +457,7 @@ static int demo_add_http(void *d, const fluxipc_http_request_t *r,
 }
 
 static int demo_mul_ipc(void *d, int argc, char **argv,
-                        char *out, size_t cap, size_t *len)
+                        void *out, size_t cap, size_t *len)
 {
     (void)d;
     int a = (argc > 1) ? atoi(argv[1]) : 0;
@@ -491,7 +491,7 @@ typedef struct {
 } device_ctx_t;
 
 static int device_name_ipc(void *data, int argc, char **argv,
-                           char *out, size_t cap, size_t *len)
+                           void *out, size_t cap, size_t *len)
 {
     device_ctx_t *ctx = data;
     if (argc > 1) snprintf(ctx->name, sizeof(ctx->name), "%s", argv[1]);
@@ -511,7 +511,7 @@ static int device_name_http(void *data, const fluxipc_http_request_t *r,
 }
 
 static int device_value_ipc(void *data, int argc, char **argv,
-                            char *out, size_t cap, size_t *len)
+                            void *out, size_t cap, size_t *len)
 {
     device_ctx_t *ctx = data;
     if (argc > 1) {
@@ -547,7 +547,7 @@ static int device_value_http(void *data, const fluxipc_http_request_t *r,
 }
 
 static int device_reset_ipc(void *data, int argc, char **argv,
-                            char *out, size_t cap, size_t *len)
+                            void *out, size_t cap, size_t *len)
 {
     (void)argc; (void)argv;
     device_ctx_t *ctx = data;
@@ -570,7 +570,7 @@ static int device_reset_http(void *data, const fluxipc_http_request_t *r,
 }
 
 static int device_info_ipc(void *data, int argc, char **argv,
-                           char *out, size_t cap, size_t *len)
+                           void *out, size_t cap, size_t *len)
 {
     (void)argc; (void)argv;
     device_ctx_t *ctx = data;
@@ -611,13 +611,13 @@ static void register_device(const char *base, const char *name,
     char path[FLUXIPC_PATH_MAX];
 
     snprintf(path, sizeof(path), "%s/name", base);
-    fluxipc_register(path, &FLUXIPC_METHOD_D(
+    fluxipc_register_method(path, &FLUXIPC_METHOD_D(
         device_name_ipc, device_name_http, ctx,
         "Get or set the device name", NULL,
         FLUXIPC_M_GET | FLUXIPC_M_PUT));
 
     snprintf(path, sizeof(path), "%s/value", base);
-    fluxipc_register(path, &FLUXIPC_METHOD_D(
+    fluxipc_register_method(path, &FLUXIPC_METHOD_D(
         device_value_ipc, device_value_http, ctx,
         "Get or set the device value (range checked)",
         "{\"type\":\"object\",\"properties\":{"
@@ -625,12 +625,12 @@ static void register_device(const char *base, const char *name,
         FLUXIPC_M_GET | FLUXIPC_M_PUT));
 
     snprintf(path, sizeof(path), "%s/reset", base);
-    fluxipc_register(path, &FLUXIPC_METHOD_D(
+    fluxipc_register_method(path, &FLUXIPC_METHOD_D(
         device_reset_ipc, device_reset_http, ctx,
         "Reset the device value to 0", NULL, FLUXIPC_M_POST));
 
     snprintf(path, sizeof(path), "%s/info", base);
-    fluxipc_register(path, &FLUXIPC_METHOD_D(
+    fluxipc_register_method(path, &FLUXIPC_METHOD_D(
         device_info_ipc, device_info_http, ctx,
         "Show full device info", NULL, FLUXIPC_M_GET));
 }
@@ -701,6 +701,25 @@ static void register_endpoints(void)
     register_device("/devices/io/led",         "status-led",      1,   0, 1);
     register_device("/devices/io/relay",       "power-relay",     0,   0, 1);
 }
+
+/* ==========================================================================
+ *  Compile-time endpoint (FLUXIPC_STATIC)
+ *
+ *  Queued by a constructor before main(); registered by
+ *  fluxipc_server_init().  No linker section or -rdynamic required.
+ * ========================================================================== */
+
+static int compiled_info_ipc(void *data, int argc, char **argv,
+                             void *out, size_t cap, size_t *len)
+{
+    (void)argc; (void)argv;
+    int n = snprintf((char *)out, cap, "compiled endpoint: %s",
+                     (const char *)data);
+    if (len) *len = (n > 0) ? (size_t)n : 0;
+    return 0;
+}
+FLUXIPC_STATIC("/system/compiled", "Compile-time registered endpoint", 0,
+               compiled_info_ipc, "FLUXIPC_STATIC");
 
 /* ==========================================================================
  *  main

@@ -128,7 +128,7 @@ void fluxipc_http_stop(fluxipc_ctx_t *ctx);
 /** Invoke a leaf's IPC handler (raw bytes). @return handler rc or -ENOENT. */
 int fluxipc_dispatch_ipc(fluxipc_ctx_t *ctx, const char *path,
                          int argc, char **argv,
-                         char *out, size_t out_cap, size_t *out_len);
+                         void *out, size_t out_cap, size_t *out_len);
 
 /** Invoke a leaf's HTTP handler (JSON). @return handler rc or -ENOSYS. */
 int fluxipc_dispatch_http(fluxipc_ctx_t *ctx, fluxipc_http_request_t *req,
@@ -147,6 +147,9 @@ fluxipc_node_t *tree_find_path(fluxipc_node_t *root, const char *path);
 fluxipc_node_t *tree_mkdir(fluxipc_node_t *parent, const char *name);
 fluxipc_node_t *tree_leaf(fluxipc_node_t *parent, const char *name,
                           const fluxipc_method_t *method);
+/** Merge @p src into an existing leaf: fill only empty handlers/metadata. */
+void            tree_leaf_merge(fluxipc_node_t *node,
+                                const fluxipc_method_t *src);
 void            tree_node_free(fluxipc_node_t *node);
 void            tree_destroy(fluxipc_node_t *root);
 

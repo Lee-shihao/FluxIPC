@@ -15,13 +15,13 @@
     "semantic_hash": ""
   },
   "include/fluxipc.h": {
-    "mtime": 1792148919.345024,
-    "ast_hash": "ab2dd18534f1865df4a75ed4f558aea4",
+    "mtime": 1792150213.0005062,
+    "ast_hash": "9666af3033339d301e6e34133b13612c",
     "semantic_hash": ""
   },
   "include/fluxipc_internal.h": {
-    "mtime": 1792145208.0567448,
-    "ast_hash": "8efbb967e340545a5531c0370ab5fe69",
+    "mtime": 1792149759.352516,
+    "ast_hash": "4ed6cf02175137ab7d37701977f8f965",
     "semantic_hash": ""
   },
   "packaging/install.sh": {
@@ -35,8 +35,8 @@
     "semantic_hash": ""
   },
   "src/fluxipc_core.c": {
-    "mtime": 1792148919.3451314,
-    "ast_hash": "69eb42280909ada86f790382126bfb19",
+    "mtime": 1792150218.8922853,
+    "ast_hash": "8c3145f63569448f9b337c2d265e07c3",
     "semantic_hash": ""
   },
   "src/fluxipc_interactive.c": {
@@ -50,18 +50,18 @@
     "semantic_hash": ""
   },
   "src/fluxipc_tree.c": {
-    "mtime": 1792141554.669884,
-    "ast_hash": "5f3a993d4c6771419cf9441b94f0ad1b",
+    "mtime": 1792149461.6056302,
+    "ast_hash": "2397d9418c2febe30b3c5fda50ae8ca8",
     "semantic_hash": ""
   },
   "tests/example_server.c": {
-    "mtime": 1792148919.345251,
-    "ast_hash": "da4c23d7b8c9ad184c8f51c723364f2b",
+    "mtime": 1792150257.9955547,
+    "ast_hash": "4b8e7e4a46ff9205795510d48e724f47",
     "semantic_hash": ""
   },
   "CLAUDE.md": {
-    "mtime": 1792148919.3445575,
-    "ast_hash": "243ca7168128fd392cc4b4055268d123",
+    "mtime": 1792150280.419264,
+    "ast_hash": "c7ef5a95791aa80ade9a76e0e5b05898",
     "semantic_hash": ""
   },
   "CODEBASE_INDEX.md": {
@@ -75,8 +75,8 @@
     "semantic_hash": "f8e8a19e3ce3b1a0a9e0e935d3c57151"
   },
   "README.md": {
-    "mtime": 1792148930.555599,
-    "ast_hash": "0625cc978ed5dc0bf77e6871c28da956",
+    "mtime": 1792150293.2371826,
+    "ast_hash": "737896c0b7a240b910d39be7b6381b9d",
     "semantic_hash": ""
   },
   "python/test_http.py": {
@@ -115,8 +115,8 @@
     "semantic_hash": ""
   },
   "tests/integration/main.c": {
-    "mtime": 1792143407.5975988,
-    "ast_hash": "e8b6c50ca2bf7ed362c3178285d2ffb7",
+    "mtime": 1792150257.9956942,
+    "ast_hash": "ca9e16b7d44b74697fd920fcaefc4e12",
     "semantic_hash": ""
   },
   "tests/unit/main.c": {
@@ -140,8 +140,8 @@
     "semantic_hash": ""
   },
   "tests/unit/test_tree.c": {
-    "mtime": 1792144729.0264082,
-    "ast_hash": "349861d67430a2c108735e219548a711",
+    "mtime": 1792149759.3519645,
+    "ast_hash": "5bc2647dcdca96b10215002d856ff448",
     "semantic_hash": ""
   },
   "tests/unit/test_util.c": {
@@ -175,8 +175,8 @@
     "semantic_hash": ""
   },
   "tests/unit/test_core.c": {
-    "mtime": 1792148919.3454032,
-    "ast_hash": "ff0b2644879b02512258a1b398fdb16f",
+    "mtime": 1792150246.974681,
+    "ast_hash": "397aa6e6a6bab7ac25c9380bb423d6ec",
     "semantic_hash": ""
   },
   "tests/unit/test_http.c": {
@@ -185,23 +185,23 @@
     "semantic_hash": ""
   },
   "tests/unit/test_interactive.c": {
-    "mtime": 1792146672.8995848,
-    "ast_hash": "b71657090da76bceb92ec6a62af1c69d",
+    "mtime": 1792149759.350903,
+    "ast_hash": "2272643ce8ef4f52e47f80b2f6e1cc56",
     "semantic_hash": ""
   },
   "tests/unit/test_sock.c": {
-    "mtime": 1792145667.9882162,
-    "ast_hash": "8be63369ad3500eaea1faf7c76dd2186",
+    "mtime": 1792149759.3518467,
+    "ast_hash": "4e9137e482cfc08fb56e4b69be8c171d",
     "semantic_hash": ""
   },
   "tests/unit/ut_common.c": {
-    "mtime": 1792147968.3771555,
-    "ast_hash": "32cc5c1eca510da4404f999580c86fbf",
+    "mtime": 1792149759.3513594,
+    "ast_hash": "5756759d2252aa75f310bd803dfb391c",
     "semantic_hash": ""
   },
   "tests/unit/ut_common.h": {
-    "mtime": 1792147968.3768466,
-    "ast_hash": "54ebe66e313038f9508e9c08fcf7462e",
+    "mtime": 1792149759.3523777,
+    "ast_hash": "3a98c4daba6109292dbf9804071e6ab2",
     "semantic_hash": ""
   },
   "tests/unit/ut_main.c": {
@@ -210,8 +210,8 @@
     "semantic_hash": ""
   },
   "README.zh-CN.md": {
-    "mtime": 1792148930.5561762,
-    "ast_hash": "8b7c4de39b6f8a3d1b6ce8408b7ed58e",
+    "mtime": 1792150293.2391672,
+    "ast_hash": "1c8256beac1b0aca895823a0f63a6bfa",
     "semantic_hash": ""
   },
   "mull.yml": {

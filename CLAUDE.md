@@ -67,7 +67,7 @@ FluxIPC is a **namespace-tree IPC library** for Linux. Applications embed it as 
 ```
 main()
  ├─ fluxipc_server_init("myapp", http_port) // creates socket + optional HTTP server
- ├─ fluxipc_register("/a/b", &method)       // build the tree (creates ancestors)
+ ├─ fluxipc_register("/a", "usage", 0, handler, data)  // classic main-branch IPC
  ├─ while (fluxipc_poll(NULL) >= 0)       // single select() loop: IPC socket + HTTP connections
  └─ fluxipc_destroy()                     // stops HTTP, unlinks socket, removes run dir
 ```
@@ -76,9 +76,9 @@ main()
 
 All server state lives in `extern fluxipc_ctx_t *g_ctx` (defined in `fluxipc_core.c`). Single-instance per process — `fluxipc_server_init()` returns `-EALREADY` if called twice.
 
-### Registration mechanism (dynamic only)
+### Registration mechanism
 
-There is no compile-time registration. `FLUXIPC_STATIC` and the `fluxipc_registry` ELF section were removed, along with the `-rdynamic` requirement. The recommended API is path-based: `fluxipc_register("/a/b/c", &method)` creates any missing intermediate containers and is atomic on failure; `fluxipc_register_all(table, count)` registers a static `fluxipc_endpoint_t[]` in one call. For runtime tree mutation, the underlying primitives `fluxipc_node_mkdir(parent, name)` (get-or-create container) and `fluxipc_node_leaf(parent, name, &method)` (create leaf) remain. Leaf metadata (`summary`, `description`, `schema`, `methods`) plus the two optional handlers (`ipc`, `http`) live in a `fluxipc_method_t`; `FLUXIPC_METHOD` / `FLUXIPC_METHOD_D` build one inline. Endpoint discovery is served over the socket (the `LIST` op).
+There is no linker-section registration: `FLUXIPC_STATIC(path, usage, slot_sz, handler, ctx)` queues an entry from a `__attribute__((constructor))`, and `fluxipc_server_init()` applies the queue. This restores main-branch source compatibility without the old `fluxipc_registry` ELF section or the `-rdynamic` requirement. The recommended API is path-based: `fluxipc_register_method("/a/b/c", &method)` creates any missing intermediate containers and is atomic on failure; `fluxipc_register_all(table, count)` registers a static `fluxipc_endpoint_t[]` in one call. The classic `main`-branch signature `fluxipc_register(path, usage, slot_sz, handler, data)` is also exported (usage→summary, slot_sz ignored) with `fluxipc_unregister()` as a removal alias, so existing main-branch code links unchanged. Registering the same path again merges: still-empty handlers/metadata are filled, so the IPC side and HTTP side (`fluxipc_register_http`) can be registered independently; existing fields are never overwritten. For runtime tree mutation, the underlying primitives `fluxipc_node_mkdir(parent, name)` (get-or-create container) and `fluxipc_node_leaf(parent, name, &method)` (create leaf, strict EEXIST) remain. Leaf metadata (`summary`, `description`, `schema`, `methods`) plus the two optional handlers (`ipc`, `http`) live in a `fluxipc_method_t`; `FLUXIPC_METHOD` / `FLUXIPC_METHOD_D` build one inline. Endpoint discovery is served over the socket (the `LIST` op).
 
 ## Conventions
 

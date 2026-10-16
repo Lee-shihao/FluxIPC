@@ -18,6 +18,8 @@
 
 fluxipc_ctx_t *g_ctx = NULL;
 
+static void fluxipc_static_apply(void);   /* FLUXIPC_STATIC registry, defined below */
+
 /* ─── Method <-> mask helpers ─────────────────────────────────────────────── */
 
 int fluxipc_method_to_mask(const char *method)
@@ -93,6 +95,7 @@ int fluxipc_server_init(const char *prog_name, uint16_t http_port)
     if (rc < 0) { free(ctx->root); free(ctx); return rc; }
 
     g_ctx = ctx;
+    fluxipc_static_apply();   /* install FLUXIPC_STATIC() endpoints, if any */
 
     if (http_port > 0) {
         rc = fluxipc_http_start(ctx, http_port);
@@ -154,8 +157,8 @@ fluxipc_node_t *fluxipc_node_leaf(fluxipc_node_t *parent,
 
 static void free_subtree(fluxipc_node_t *node);   /* defined below */
 
-fluxipc_node_t *fluxipc_register(const char *path,
-                                 const fluxipc_method_t *method)
+fluxipc_node_t *fluxipc_register_method(const char *path,
+                                        const fluxipc_method_t *method)
 {
     if (!g_ctx || !path || path[0] != '/' || !method ||
         (!method->ipc && !method->http) ||
@@ -186,9 +189,15 @@ fluxipc_node_t *fluxipc_register(const char *path,
         if (!valid_segment(seg)) goto fail;
 
         if (!slash) {                       /* final segment → leaf */
-            fluxipc_node_t *leaf = tree_leaf(cur, seg, method);
-            if (!leaf) { err = EEXIST; goto fail; }
-            leaf->id = g_ctx->next_id++;
+            fluxipc_node_t *leaf = tree_find_child(cur, seg);
+            if (leaf) {
+                if (!leaf->is_leaf) { err = EEXIST; goto fail; }
+                tree_leaf_merge(leaf, method);   /* complete the other side */
+            } else {
+                leaf = tree_leaf(cur, seg, method);
+                if (!leaf) { err = ENOMEM; goto fail; }
+                leaf->id = g_ctx->next_id++;
+            }
             pthread_mutex_unlock(&g_ctx->tree_lock);
             return leaf;
         }
@@ -217,10 +226,69 @@ int fluxipc_register_all(const fluxipc_endpoint_t *endpoints, size_t count)
 {
     if (!endpoints && count) return -EINVAL;
     for (size_t i = 0; i < count; i++) {
-        if (!fluxipc_register(endpoints[i].path, &endpoints[i].method))
+        if (!fluxipc_register_method(endpoints[i].path, &endpoints[i].method))
             return -errno;
     }
     return 0;
+}
+
+fluxipc_node_t *fluxipc_register_http(const char *path,
+                                      const fluxipc_method_t *method)
+{
+    if (!method || !method->http) { errno = EINVAL; return NULL; }
+    return fluxipc_register_method(path, method);
+}
+
+/*
+ * Classic main-branch entry point.  The shared-memory @p slot_sz is accepted
+ * for source compatibility and ignored; @p usage maps to the leaf summary.
+ * The name is parenthesised so the fluxipc_register() dispatch macro does not
+ * rewrite this definition.
+ */
+fluxipc_node_t *(fluxipc_register)(const char *path, const char *usage,
+                                   size_t slot_sz,
+                                   fluxipc_handler_fn handler, void *data)
+{
+    (void)slot_sz;
+    if (!handler) { errno = EINVAL; return NULL; }
+    fluxipc_method_t m = {
+        .ipc     = handler,
+        .data    = data,
+        .summary = usage,
+    };
+    return fluxipc_register_method(path, &m);
+}
+
+void fluxipc_unregister(fluxipc_node_t *node)
+{
+    fluxipc_node_remove(node);
+}
+
+/* ─── Compile-time (FLUXIPC_STATIC) registry ──────────────────────────────── */
+
+static fluxipc_entry_t *g_static_head = NULL;
+static fluxipc_entry_t *g_static_tail = NULL;
+static pthread_mutex_t  g_static_lock = PTHREAD_MUTEX_INITIALIZER;
+
+void fluxipc_static_add(fluxipc_entry_t *entry)
+{
+    if (!entry) return;
+    entry->next = NULL;
+    pthread_mutex_lock(&g_static_lock);
+    if (g_static_tail) g_static_tail->next = entry;
+    else               g_static_head = entry;
+    g_static_tail = entry;
+    pthread_mutex_unlock(&g_static_lock);
+}
+
+/* Re-register every compile-time entry into the freshly built tree.  The list
+ * is kept so a later server_init() after destroy() sees the endpoints again. */
+static void fluxipc_static_apply(void)
+{
+    pthread_mutex_lock(&g_static_lock);
+    for (fluxipc_entry_t *e = g_static_head; e; e = e->next)
+        fluxipc_register(e->path, e->usage, e->slot_data_sz, e->handler, e->data);
+    pthread_mutex_unlock(&g_static_lock);
 }
 
 fluxipc_node_t *fluxipc_node_find(fluxipc_node_t *parent, const char *name)
@@ -389,7 +457,7 @@ int fluxipc_node_is_leaf(const fluxipc_node_t *n)
 
 int fluxipc_dispatch_ipc(fluxipc_ctx_t *ctx, const char *path,
                          int argc, char **argv,
-                         char *out, size_t out_cap, size_t *out_len)
+                         void *out, size_t out_cap, size_t *out_len)
 {
     fluxipc_handler_fn handler = NULL;
     void              *data    = NULL;

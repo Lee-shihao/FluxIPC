@@ -78,18 +78,21 @@ fluxipc-cli example_server -c /demo/arithmetic/add 7 3
 
 ### 1. Register endpoints
 
-Registration is dynamic and **path-based**.  `fluxipc_register()` takes an
-absolute namespace path and creates every missing intermediate container for
-you; `fluxipc_register_all()` registers a whole static table in one call.  Both
-copy the method descriptor (handlers, `summary`, `description`, `schema`), so
-passing a stack temporary or a `FLUXIPC_METHOD` compound literal is safe.
+Registration is dynamic and **path-based**: the helpers create every missing
+intermediate container for you.  `fluxipc_register()` keeps the classic
+`main`-branch signature `(path, usage, slot_sz, handler, data)` and registers
+an IPC endpoint; `fluxipc_register_method()` takes a full `fluxipc_method_t`
+(IPC and/or HTTP); `fluxipc_register_http()` attaches the HTTP side; and
+`fluxipc_register_all()` registers a whole static table.  All of them copy the
+method descriptor (handlers, `summary`, `description`, `schema`), so passing a
+stack temporary or a `FLUXIPC_METHOD` compound literal is safe.
 
 ```c
 #include <fluxipc.h>
 
 /* IPC: positional argv → formatted text (the original contract) */
 static int hello_ipc(void *data, int argc, char **argv,
-                     char *out, size_t cap, size_t *len)
+                     void *out, size_t cap, size_t *len)
 {
     const char *name = (argc > 1) ? argv[1] : "World";
     int n = snprintf(out, cap, "Hello, %s!", name);
@@ -117,14 +120,17 @@ int main(void)
 {
     fluxipc_server_init("myapp", 32100);            /* 0 disables HTTP */
 
-    /* One line per endpoint: metadata + both handlers in place. */
-    fluxipc_register("/greet/hello", &FLUXIPC_METHOD(
+    /* Full method in one call: metadata + both handlers. */
+    fluxipc_register_method("/greet/hello", &FLUXIPC_METHOD(
         hello_ipc,          /* socket / CLI: raw bytes */
         hello_http,         /* HTTP: JSON              */
         "Say hello",
         "{\"type\":\"object\",\"properties\":"
         "{\"name\":{\"type\":\"string\"}}}",
         FLUXIPC_M_GET | FLUXIPC_M_POST));
+
+    /* ...or the classic main-branch form (IPC only). */
+    fluxipc_register("/greet/plain", "Say hello", 0, hello_ipc, NULL);
 
     while (fluxipc_poll(NULL) >= 0) { /* socket + HTTP */ }
 
@@ -149,8 +155,47 @@ fluxipc_register_all(endpoints, sizeof(endpoints) / sizeof(endpoints[0]));
 `FLUXIPC_METHOD_D(ipc, http, data, summary, schema, methods)` is the same but
 also sets the per-leaf `data` pointer for stateful handlers.
 
-A failed `fluxipc_register()` is atomic: it never leaves half-created
-containers behind, and it never prunes containers you created yourself.
+#### `main`-branch compatibility
+
+Code written for the `main` branch's interfaces compiles and links unchanged:
+
+- `fluxipc_register(path, usage, slot_sz, handler, data)` — `usage` becomes the
+  leaf `summary`; `slot_sz` (the old shared-memory slot size) is accepted and
+  ignored; the handler's `void *out_buf` parameter matches the public
+  `fluxipc_handler_fn`;
+- `fluxipc_unregister(node)` is kept as an alias for
+  `fluxipc_node_remove(node)`;
+- `FLUXIPC_STATIC(path, usage, slot_sz, handler, ctx)` declares a compile-time
+  endpoint.  Entries are queued by a constructor before `main()` and installed
+  by `fluxipc_server_init()`, so **no `-rdynamic` and no linker section are
+  needed**.
+
+```c
+static int hello_ipc(void *d, int argc, char **argv,
+                     void *out, size_t cap, size_t *len) { /* ... */ }
+
+FLUXIPC_STATIC("/greet/compiled", "say hello", 0, hello_ipc, NULL);
+```
+
+#### Split registration (IPC and HTTP independently)
+
+Registering the same path again **merges** into the existing leaf: only
+still-empty fields are filled, so an IPC-only registration can be completed
+later with `fluxipc_register_http()` — and vice versa.  The HTTP method mask is
+owned by the call that first attaches an HTTP handler, and existing non-empty
+handlers, metadata and `data` are never overwritten.
+
+```c
+/* Classic / IPC-only registration (http may also be NULL in a method). */
+fluxipc_register("/greet/hello", "Say hello", 0, hello_ipc, NULL);
+
+/* Add the HTTP side later (ipc is NULL). */
+fluxipc_register_http("/greet/hello", &FLUXIPC_METHOD(
+    NULL, hello_http, "Say hello", NULL, FLUXIPC_M_GET));
+```
+
+A failed registration is atomic: it never leaves half-created containers
+behind and never prunes containers you created yourself.
 
 Compile/link:
 
@@ -160,18 +205,20 @@ gcc -o myapp myapp.c $(pkg-config --cflags --libs fluxipc) -lcjson
 
 #### Lower-level node API
 
-`fluxipc_register()` is a thin convenience over the node primitives, which stay
-available when the tree must be mutated at runtime:
+The registration helpers are thin conveniences over the node primitives, which
+stay available when the tree must be mutated at runtime:
 
 | Function | Description |
 |----------|-------------|
 | `fluxipc_tree_root()` | Root node (after `fluxipc_server_init`) |
-| `fluxipc_register(path, &method)` | Register a leaf, auto-creating ancestors |
+| `fluxipc_register(path, usage, slot_sz, handler, data)` | Classic main-branch registration (IPC) |
+| `fluxipc_register_method(path, &method)` | Register a full method; merges on repeat |
+| `fluxipc_register_http(path, &method)` | Register the HTTP side (merges, `ipc` usually NULL) |
 | `fluxipc_register_all(table, count)` | Register a static endpoint table |
 | `fluxipc_node_mkdir(parent, name)` | Get-or-create a container child (idempotent) |
 | `fluxipc_node_leaf(parent, name, &method)` | Create a leaf method under `parent` |
 | `fluxipc_node_find(parent, name)` | Look up a direct child |
-| `fluxipc_node_remove(node)` | Remove a leaf or a whole subtree; prunes empty ancestors |
+| `fluxipc_node_remove(node)` / `fluxipc_unregister(node)` | Remove a leaf/subtree; prunes empty ancestors |
 | `fluxipc_node_leaves(node, cb, user)` | **Built-in on every node**: enumerate all leaves at/below it |
 
 ### 3. Handler signatures
@@ -183,7 +230,7 @@ be `NULL` (the corresponding transport then reports *not implemented*).
 
 ```c
 typedef int (*fluxipc_handler_fn)(void *data, int argc, char **argv,
-                                  char *out, size_t out_cap, size_t *out_len);
+                                  void *out_buf, size_t out_cap, size_t *out_len);
 ```
 
 **HTTP handler** — parsed request, cJSON response:
@@ -383,7 +430,7 @@ COV_LINE_MIN=90  COV_BRANCH_MIN=78  MUT_SCORE_MIN=70  MUT_WORKERS=4
 | Gate | Target | Actual |
 |------|--------|--------|
 | Line coverage (`src/`) | ≥ 90% | **95.8%** |
-| Branch coverage (`src/`) | ≥ 78% | **78.8%** |
+| Branch coverage (`src/`) | ≥ 78% | **79.1%** |
 | Mutation score | > 70% | **78%** |
 | ASan + UBSan | clean | clean |
 
@@ -438,8 +485,11 @@ server (see below).
 | Function | Description |
 |----------|-------------|
 | `fluxipc_server_init(prog, http_port)` | Init socket + optional HTTP (0 = off) |
-| `fluxipc_register(path, method)` | Register a leaf, auto-creating ancestors |
+| `fluxipc_register(path, usage, slot_sz, handler, data)` | Classic main-branch registration (IPC) |
+| `fluxipc_register_method(path, method)` | Register a full method; merges on repeat |
+| `fluxipc_register_http(path, method)` | Register the HTTP side of an endpoint |
 | `fluxipc_register_all(table, count)` | Register a static `fluxipc_endpoint_t` table |
+| `FLUXIPC_STATIC(path, usage, slot, handler, data)` | Compile-time endpoint (constructor-queued) |
 | `fluxipc_tree_root()` | Root node |
 | `fluxipc_node_mkdir(parent, name)` | Get-or-create container |
 | `fluxipc_node_leaf(parent, name, method)` | Register a leaf |

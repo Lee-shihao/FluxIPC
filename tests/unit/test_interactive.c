@@ -874,7 +874,7 @@ static void test_watch_loop(void **state)
 /* ── dispatch argument handling ──────────────────────────────────────────── */
 
 static int inter_arg_ipc(void *d, int argc, char **argv,
-                         char *out, size_t cap, size_t *len)
+                         void *out, size_t cap, size_t *len)
 {
     (void)d;
     const char *v = (argc > 1) ? argv[1] : "(none)";

@@ -38,7 +38,7 @@ static int g_ipc_calls;
 static char g_ipc_last[128];
 
 static int ipc_handler(void *data, int argc, char **argv,
-                       char *out, size_t out_cap, size_t *out_len)
+                       void *out, size_t out_cap, size_t *out_len)
 {
     g_ipc_calls++;
     const char *seed = data ? (const char *)data : "h";
@@ -60,6 +60,14 @@ static int http_handler(void *data, const fluxipc_http_request_t *req,
     }
     return 0;
 }
+
+/* distinct callbacks used to prove a merge never overwrites an existing side */
+static int ipc_handler2(void *d, int c, char **v, void *o, size_t n, size_t *l)
+{ (void)d; (void)c; (void)v; (void)o; (void)n; (void)l; return 0; }
+
+static int http_handler2(void *d, const fluxipc_http_request_t *r,
+                         fluxipc_http_response_t *resp)
+{ (void)d; (void)r; (void)resp; return 0; }
 
 static cJSON *find_leaf_named(cJSON *manifest, const char *name)
 {
@@ -307,50 +315,48 @@ static void test_register_path(void **state)
                            .summary = "sum" };
 
     /* deep path auto-creates every intermediate container */
-    fluxipc_node_t *leaf = fluxipc_register("/a/b/c", &m);
+    fluxipc_node_t *leaf = fluxipc_register_method("/a/b/c", &m);
     assert_non_null(leaf);
     assert_true(fluxipc_node_is_leaf(leaf));
     assert_string_equal(fluxipc_node_path(leaf), "/a/b/c");
     assert_true(leaf->id >= 1);
 
     /* repeated slashes are tolerated */
-    assert_non_null(fluxipc_register("//a//b//d", &m));
+    assert_non_null(fluxipc_register_method("//a//b//d", &m));
     assert_non_null(fluxipc_node_find(
         fluxipc_node_find(fluxipc_node_find(fluxipc_tree_root(), "a"), "b"),
         "d"));
 
-    /* duplicate leaf path */
-    errno = 0;
-    assert_null(fluxipc_register("/a/b/c", &m));
-    assert_int_equal(errno, EEXIST);
+    /* duplicate leaf path merges instead of failing */
+    assert_ptr_equal(fluxipc_register_method("/a/b/c", &m), leaf);
 
     /* a container name cannot later become a leaf */
     errno = 0;
-    assert_null(fluxipc_register("/a/b", &m));
+    assert_null(fluxipc_register_method("/a/b", &m));
     assert_int_equal(errno, EEXIST);
 
     /* descending through a leaf is rejected */
     errno = 0;
-    assert_null(fluxipc_register("/a/b/c/deep", &m));
+    assert_null(fluxipc_register_method("/a/b/c/deep", &m));
     assert_int_equal(errno, EEXIST);
 
     /* malformed paths */
     errno = 0;
-    assert_null(fluxipc_register(NULL, &m));
+    assert_null(fluxipc_register_method(NULL, &m));
     assert_int_equal(errno, EINVAL);
     errno = 0;
-    assert_null(fluxipc_register("no-slash", &m));
+    assert_null(fluxipc_register_method("no-slash", &m));
     assert_int_equal(errno, EINVAL);
     errno = 0;
-    assert_null(fluxipc_register("", &m));
+    assert_null(fluxipc_register_method("", &m));
     assert_int_equal(errno, EINVAL);
     errno = 0;
-    assert_null(fluxipc_register("/", &m));
+    assert_null(fluxipc_register_method("/", &m));
     assert_int_equal(errno, EINVAL);
 
     /* trailing slash is invalid and the created container is rolled back */
     errno = 0;
-    assert_null(fluxipc_register("/t/", &m));
+    assert_null(fluxipc_register_method("/t/", &m));
     assert_int_equal(errno, EINVAL);
     assert_null(fluxipc_node_find(fluxipc_tree_root(), "t"));
 
@@ -360,7 +366,7 @@ static void test_register_path(void **state)
     memset(bad + 5, 'x', FLUXIPC_NAME_MAX);
     bad[5 + FLUXIPC_NAME_MAX] = '\0';
     errno = 0;
-    assert_null(fluxipc_register(bad, &m));
+    assert_null(fluxipc_register_method(bad, &m));
     assert_int_equal(errno, EINVAL);
     assert_null(fluxipc_node_find(fluxipc_tree_root(), "new"));
 
@@ -372,18 +378,18 @@ static void test_register_path(void **state)
     memset(deep_bad + 10, 'y', FLUXIPC_NAME_MAX);
     deep_bad[10 + FLUXIPC_NAME_MAX] = '\0';
     errno = 0;
-    assert_null(fluxipc_register(deep_bad, &m));
+    assert_null(fluxipc_register_method(deep_bad, &m));
     assert_int_equal(errno, EINVAL);
     assert_non_null(fluxipc_node_find(fluxipc_tree_root(), "keep"));
     assert_null(fluxipc_node_find(keep, "new"));
 
     /* invalid method */
     errno = 0;
-    assert_null(fluxipc_register("/x", NULL));
+    assert_null(fluxipc_register_method("/x", NULL));
     assert_int_equal(errno, EINVAL);
     fluxipc_method_t empty = { .summary = "x" };
     errno = 0;
-    assert_null(fluxipc_register("/x", &empty));
+    assert_null(fluxipc_register_method("/x", &empty));
     assert_int_equal(errno, EINVAL);
 
     /* path longer than FLUXIPC_PATH_MAX */
@@ -392,7 +398,7 @@ static void test_register_path(void **state)
     memset(huge + 1, 'a', sizeof(huge) - 2);
     huge[sizeof(huge) - 1] = '\0';
     errno = 0;
-    assert_null(fluxipc_register(huge, &m));
+    assert_null(fluxipc_register_method(huge, &m));
     assert_int_equal(errno, EINVAL);
 }
 
@@ -413,12 +419,116 @@ static void test_register_all_table(void **state)
     assert_int_equal(fluxipc_node_leaves(t, count_cb, &n), 3);
     assert_int_equal(n, 3);
 
-    /* first failure is reported as the offending negative errno */
-    assert_int_equal(fluxipc_register_all(table, 1), -EEXIST);
+    /* first failure is reported as the offending negative errno: "sub" is a
+     * container, so it cannot be turned into a leaf */
+    const fluxipc_endpoint_t clash[] = { { "/t/sub", m } };
+    assert_int_equal(fluxipc_register_all(clash, 1), -EEXIST);
+
+    /* re-registering an existing leaf merges and succeeds */
+    assert_int_equal(fluxipc_register_all(table, 1), 0);
 
     /* empty table is a no-op; NULL + count is invalid */
     assert_int_equal(fluxipc_register_all(NULL, 0), 0);
     assert_int_equal(fluxipc_register_all(NULL, 1), -EINVAL);
+}
+
+static void test_register_merge(void **state)
+{
+    (void)state;
+    int ctx = 42;
+
+    /* 1) IPC-only registration (the compatibility case) */
+    fluxipc_method_t ipc_only = { .ipc = ipc_handler, .summary = "combined" };
+    fluxipc_node_t *n = fluxipc_register_method("/m/x", &ipc_only);
+    assert_non_null(n);
+    assert_ptr_equal(n->method.ipc, ipc_handler);
+    assert_null(n->method.http);
+    assert_int_equal(n->method.methods, FLUXIPC_M_DEFAULT);
+    assert_string_equal(n->method.summary, "combined");
+
+    /* 2) HTTP side registered separately: same node, both handlers present */
+    fluxipc_method_t http_only = {
+        .http = http_handler, .data = &ctx, .methods = FLUXIPC_M_PUT,
+    };
+    assert_ptr_equal(fluxipc_register_http("/m/x", &http_only), n);
+    assert_ptr_equal(n->method.ipc, ipc_handler);      /* kept */
+    assert_ptr_equal(n->method.http, http_handler);
+    assert_ptr_equal(n->method.data, &ctx);
+    assert_string_equal(n->method.summary, "combined");
+    assert_int_equal(n->method.methods, FLUXIPC_M_PUT);
+
+    /* 3) a later registration must not overwrite anything already set */
+    fluxipc_method_t other = {
+        .ipc = ipc_handler2, .http = http_handler2,
+        .data = (void *)1, .summary = "ignored", .methods = FLUXIPC_M_DELETE,
+    };
+    assert_ptr_equal(fluxipc_register_method("/m/x", &other), n);
+    assert_ptr_equal(n->method.ipc, ipc_handler);
+    assert_ptr_equal(n->method.http, http_handler);
+    assert_ptr_equal(n->method.data, &ctx);
+    assert_string_equal(n->method.summary, "combined");
+    assert_int_equal(n->method.methods, FLUXIPC_M_PUT);
+
+    /* 4) reverse order: HTTP first, then IPC */
+    fluxipc_node_t *r = fluxipc_register_http("/m/y", &http_only);
+    assert_non_null(r);
+    assert_null(r->method.ipc);
+    fluxipc_method_t ipc_only2 = { .ipc = ipc_handler2 };
+    assert_ptr_equal(fluxipc_register_method("/m/y", &ipc_only2), r);
+    assert_ptr_equal(r->method.ipc, ipc_handler2);
+    assert_ptr_equal(r->method.http, http_handler);
+
+    /* 5) fluxipc_register_http requires an HTTP handler */
+    errno = 0;
+    assert_null(fluxipc_register_http("/m/z", &ipc_only));
+    assert_int_equal(errno, EINVAL);
+    errno = 0;
+    assert_null(fluxipc_register_http("/m/z", NULL));
+    assert_int_equal(errno, EINVAL);
+}
+
+/* classic main-branch fluxipc_register(path, usage, slot_sz, handler, data) */
+static void test_register_legacy(void **state)
+{
+    (void)state;
+    int ctx = 7;
+
+    fluxipc_node_t *n = fluxipc_register("/legacy/a", "[args]", 0,
+                                         ipc_handler, &ctx);
+    assert_non_null(n);
+    assert_true(fluxipc_node_is_leaf(n));
+    assert_ptr_equal(n->method.ipc, ipc_handler);
+    assert_string_equal(n->method.summary, "[args]");
+    assert_ptr_equal(n->method.data, &ctx);
+    assert_null(n->method.http);
+    assert_int_equal(n->method.methods, FLUXIPC_M_DEFAULT);
+
+    /* NULL handler is rejected; NULL usage is accepted (empty summary) */
+    errno = 0;
+    assert_null(fluxipc_register("/legacy/b", "x", 0, NULL, NULL));
+    assert_int_equal(errno, EINVAL);
+    assert_non_null(fluxipc_register("/legacy/c", NULL, 0, ipc_handler, NULL));
+
+    /* the HTTP side can complete a classic registration, same node */
+    fluxipc_node_t *h = fluxipc_register_http("/legacy/a",
+        &FLUXIPC_METHOD(NULL, http_handler, "ignored", NULL, FLUXIPC_M_GET));
+    assert_ptr_equal(h, n);
+    assert_ptr_equal(n->method.ipc, ipc_handler);
+    assert_ptr_equal(n->method.http, http_handler);
+    assert_string_equal(n->method.summary, "[args]");
+
+    /* fluxipc_unregister() is the main alias for fluxipc_node_remove() */
+    fluxipc_node_t *g = fluxipc_register("/legacyrm/a", "u", 0, ipc_handler, NULL);
+    assert_non_null(g);
+    fluxipc_unregister(g);
+    assert_null(fluxipc_node_find(fluxipc_tree_root(), "legacyrm"));
+    fluxipc_unregister(NULL);            /* must be a no-op */
+}
+
+static void test_static_add_null(void **state)
+{
+    (void)state;
+    fluxipc_static_add(NULL);            /* must be a no-op, no pollution */
 }
 
 static void test_noregistration_without_ctx(void **state)
@@ -432,7 +542,10 @@ static void test_noregistration_without_ctx(void **state)
     assert_null(fluxipc_node_leaf((fluxipc_node_t *)1, "a", NULL));
     assert_int_equal(errno, EINVAL);
     errno = 0;
-    assert_null(fluxipc_register("/a", (const fluxipc_method_t *)1));
+    assert_null(fluxipc_register_method("/a", (const fluxipc_method_t *)1));
+    assert_int_equal(errno, EINVAL);
+    errno = 0;
+    assert_null(fluxipc_register("/a", "u", 0, ipc_handler, NULL));
     assert_int_equal(errno, EINVAL);
     assert_null(fluxipc_node_find((fluxipc_node_t *)1, "a"));
     assert_null(fluxipc_tree_root());
@@ -817,6 +930,11 @@ int ut_core(void)
                                         core_setup, core_teardown),
         cmocka_unit_test_setup_teardown(test_register_all_table,
                                         core_setup, core_teardown),
+        cmocka_unit_test_setup_teardown(test_register_merge,
+                                        core_setup, core_teardown),
+        cmocka_unit_test_setup_teardown(test_register_legacy,
+                                        core_setup, core_teardown),
+        cmocka_unit_test(test_static_add_null),
         cmocka_unit_test(test_noregistration_without_ctx),
         cmocka_unit_test_setup_teardown(test_name_length_boundary,
                                         core_setup, core_teardown),
