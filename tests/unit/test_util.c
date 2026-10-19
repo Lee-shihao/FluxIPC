@@ -399,27 +399,40 @@ static void test_json_error_helper(void **state)
     (void)state;
     fluxipc_json_response_t resp = { 0 };
 
-    assert_int_equal(fluxipc_json_error(&resp, -EINVAL, "bad input"), 0);
-    assert_int_equal(resp.status, 400);
-    assert_string_equal(cJSON_GetObjectItem(resp.json, "error")->valuestring,
-                        "bad input");
-    assert_int_equal(cJSON_GetObjectItem(resp.json, "code")->valueint, -EINVAL);
-    cJSON_Delete(resp.json);
-    resp.json = NULL;
+    struct { int code; int status; int ret; } cases[] = {
+        { -EINVAL,  400, -EINVAL  },
+        { -EACCES,  403, -EACCES  },
+        { -EPERM,   403, -EPERM   },
+        { -ENOENT,  404, -ENOENT  },
+        { -EEXIST,  409, -EEXIST  },
+        { -EBUSY,   409, -EBUSY   },
+        { -EAGAIN,  409, -EAGAIN  },
+        { -ERANGE,  422, -ERANGE  },
+        { -E2BIG,   422, -E2BIG   },
+        { -ENOSYS,  501, -ENOSYS  },
+        { -ENOMEM,  500, -ENOMEM  },
+        { 400,      400, -EINVAL  },
+        { 403,      403, -EACCES  },
+        { 404,      404, -ENOENT  },
+        { 409,      409, -EBUSY   },
+        { 413,      413, -EMSGSIZE},
+        { 422,      422, -ERANGE  },
+        { 431,      431, -E2BIG   },
+        { 501,      501, -ENOSYS  },
+        { 418,      418, -EIO     },
+    };
 
-    assert_int_equal(fluxipc_json_error(&resp, -EBUSY, "busy"), 0);
-    assert_int_equal(resp.status, 409);
-    cJSON_Delete(resp.json);
-    resp.json = NULL;
-
-    assert_int_equal(fluxipc_json_error(&resp, -ERANGE, "range"), 0);
-    assert_int_equal(resp.status, 422);
-    cJSON_Delete(resp.json);
-    resp.json = NULL;
-
-    assert_int_equal(fluxipc_json_error(&resp, 418, "teapot"), 0);
-    assert_int_equal(resp.status, 418);
-    cJSON_Delete(resp.json);
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        int ret = fluxipc_json_error(&resp, cases[i].code, "msg");
+        assert_int_equal(ret, cases[i].ret);
+        assert_int_equal(resp.status, cases[i].status);
+        assert_string_equal(
+            cJSON_GetObjectItem(resp.json, "error")->valuestring, "msg");
+        assert_int_equal(
+            cJSON_GetObjectItem(resp.json, "code")->valueint, cases[i].code);
+        cJSON_Delete(resp.json);
+        resp.json = NULL;
+    }
 
     assert_int_equal(fluxipc_json_error(NULL, -EINVAL, "x"), -EINVAL);
 }

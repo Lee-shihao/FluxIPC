@@ -145,8 +145,9 @@ int         fluxipc_json_has(const fluxipc_json_request_t *req,
  *
  * @p code may be a negative errno (mapped to a response status) or a positive
  * explicit status (e.g. 409).  Ownership of the built cJSON object transfers
- * to the server.
- * @return 0 on success, -ENOMEM on allocation failure.
+ * to the server; HTTP uses @c resp->status, while local JSON IPC uses the
+ * returned errno.  Positive statuses are mapped back to a suitable errno.
+ * @return the negative errno to return from the handler, or -ENOMEM.
  */
 int fluxipc_json_error(fluxipc_json_response_t *resp, int code,
                        const char *msg);

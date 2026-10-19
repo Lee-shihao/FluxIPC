@@ -218,6 +218,21 @@ static int status_from_code(int code)
     }
 }
 
+static int errno_from_status(int status)
+{
+    switch (status) {
+        case 400: return -EINVAL;
+        case 403: return -EACCES;
+        case 404: return -ENOENT;
+        case 409: return -EBUSY;
+        case 413: return -EMSGSIZE;
+        case 422: return -ERANGE;
+        case 431: return -E2BIG;
+        case 501: return -ENOSYS;
+        default:  return -EIO;
+    }
+}
+
 int fluxipc_json_error(fluxipc_json_response_t *resp, int code,
                        const char *msg)
 {
@@ -232,5 +247,6 @@ int fluxipc_json_error(fluxipc_json_response_t *resp, int code,
     cJSON_Delete(resp->json);
     resp->json   = o;
     resp->status = status_from_code(code);
-    return 0;
+
+    return code < 0 ? code : errno_from_status(resp->status);
 }
