@@ -12,6 +12,7 @@
 #include "fluxipc_internal.h"
 
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include <sys/un.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -252,14 +253,26 @@ int sock_conn_process(fluxipc_ctx_t *ctx, fluxipc_conn_t *c)
 
 /* ─── Client helpers ──────────────────────────────────────────────────────── */
 
-static int send_all(int fd, const void *buf, size_t len)
+static int send_iov_all(int fd, struct iovec *iov, int iovcnt)
 {
-    const char *p = buf;
-    while (len > 0) {
-        ssize_t n = send(fd, p, len, MSG_NOSIGNAL);
+    while (iovcnt > 0) {
+        struct msghdr msg = {
+            .msg_iov    = iov,
+            .msg_iovlen = (size_t)iovcnt,
+        };
+        ssize_t n = sendmsg(fd, &msg, MSG_NOSIGNAL);
         if (n < 0) { if (errno == EINTR) continue; return -errno; }
         if (n == 0) return -EPIPE;
-        p += n; len -= (size_t)n;
+
+        while (iovcnt > 0 && (size_t)n >= iov->iov_len) {
+            n -= (ssize_t)iov->iov_len;
+            iov++;
+            iovcnt--;
+        }
+        if (iovcnt > 0) {
+            iov->iov_base = (char *)iov->iov_base + n;
+            iov->iov_len -= (size_t)n;
+        }
     }
     return 0;
 }
@@ -279,6 +292,8 @@ static int recv_all(int fd, void *buf, size_t len)
 static int client_send_request(int fd, uint16_t op, const char *path,
                                int argc, char **argv)
 {
+    if (argc < 0 || argc > FLUXIPC_MAX_ARGS) return -EINVAL;
+
     size_t plen = path ? strlen(path) : 0;
     size_t arg_total = 0;
     for (int i = 0; i < argc; i++) arg_total += strlen(argv[i]) + 1;
@@ -289,13 +304,24 @@ static int client_send_request(int fd, uint16_t op, const char *path,
         .path_len = (uint16_t)plen,
         .arg_len  = (uint32_t)arg_total,
     };
-    if (send_all(fd, &req, sizeof(req)) < 0) return -EIO;
-    if (plen > 0 && send_all(fd, path, plen) < 0) return -EIO;
-    for (int i = 0; i < argc; i++) {
-        size_t l = strlen(argv[i]) + 1;
-        if (send_all(fd, argv[i], l) < 0) return -EIO;
+
+    struct iovec iov[FLUXIPC_MAX_ARGS + 2];
+    int iovcnt = 0;
+    iov[iovcnt].iov_base = &req;
+    iov[iovcnt].iov_len  = sizeof(req);
+    iovcnt++;
+    if (plen > 0) {
+        iov[iovcnt].iov_base = (void *)path;
+        iov[iovcnt].iov_len  = plen;
+        iovcnt++;
     }
-    return 0;
+    for (int i = 0; i < argc; i++) {
+        iov[iovcnt].iov_base = argv[i];
+        iov[iovcnt].iov_len  = strlen(argv[i]) + 1;
+        iovcnt++;
+    }
+
+    return send_iov_all(fd, iov, iovcnt);
 }
 
 static int client_connect(const char *sock_path)
