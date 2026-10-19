@@ -1,16 +1,16 @@
 # Graph Report - FluxIPC  (2026-10-19)
 
 ## Corpus Check
-- 45 files · ~54,128 words
+- 45 files · ~54,346 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 813 nodes · 2057 edges · 27 communities (24 shown, 3 thin omitted)
-- Extraction: 65% EXTRACTED · 35% INFERRED · 0% AMBIGUOUS · INFERRED: 720 edges (avg confidence: 0.8)
+- 813 nodes · 2057 edges · 28 communities (25 shown, 3 thin omitted)
+- Extraction: 65% EXTRACTED · 35% INFERRED · 0% AMBIGUOUS · INFERRED: 722 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `2f721256`
+- Built from commit: `134650dc`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -33,6 +33,7 @@
 - [[_COMMUNITY_Community 16|Community 16]]
 - [[_COMMUNITY_Community 17|Community 17]]
 - [[_COMMUNITY_Community 18|Community 18]]
+- [[_COMMUNITY_Community 19|Community 19]]
 - [[_COMMUNITY_Community 20|Community 20]]
 - [[_COMMUNITY_Community 21|Community 21]]
 - [[_COMMUNITY_Community 22|Community 22]]
@@ -51,11 +52,9 @@
 7. `resp_status()` - 25 edges
 8. `main()` - 23 edges
 9. `dispatch()` - 22 edges
-10. `fluxipc_call()` - 22 edges
+10. `fluxipc_node_t` - 21 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `test_json_error_helper()` --calls--> `fluxipc_json_error()`  [INFERRED]
-  tests/unit/test_util.c → src/fluxipc_util.c
 - `Six-Layer Bottom-Up Component Architecture` --semantically_similar_to--> `Four Core Design Principles of FluxIPC`  [INFERRED] [semantically similar]
   CLAUDE.md → FluxIPC_CSDN.md
 - `Compile-Time Registration via ELF Section (FLUXIPC_STATIC)` --semantically_similar_to--> `Compile-time + Runtime Dual Registration Mechanism`  [INFERRED] [semantically similar]
@@ -64,6 +63,8 @@
   CLAUDE.md → README.md
 - `FluxIPC CSDN Article — Lightweight Linux IPC Framework` --semantically_similar_to--> `FluxIPC — Lightweight namespace-tree IPC library for Linux (README)`  [INFERRED] [semantically similar]
   FluxIPC_CSDN.md → README.md
+- `Compile-time + Runtime Dual Registration Mechanism` --semantically_similar_to--> `FLUXIPC_STATIC Compile-time Registration Macro`  [INFERRED] [semantically similar]
+  FluxIPC_CSDN.md → README.md
 
 ## Import Cycles
 - None detected.
@@ -71,15 +72,15 @@
 ## Hyperedges (group relationships)
 - **Four Core Design Principles of FluxIPC** — fluxipc_fluxipc_csdn_namespace_tree_design, fluxipc_fluxipc_csdn_dual_registration, fluxipc_fluxipc_csdn_symlink_zero_config, fluxipc_fluxipc_csdn_mcp_ai_integration [EXTRACTED 1.00]
 
-## Communities (27 total, 3 thin omitted)
+## Communities (28 total, 3 thin omitted)
 
 ### Community 0 - "Community 0"
 Cohesion: 0.05
-Nodes (88): fluxipc_endpoint_t, fluxipc_entry_t, fluxipc_handler_fn, fluxipc_leaf_cb, fluxipc_request_hook_fn, fluxipc_schema_type_t, bind_schema_fields(), cJSON (+80 more)
+Nodes (90): fluxipc_endpoint_t, fluxipc_entry_t, fluxipc_handler_fn, fluxipc_leaf_cb, fluxipc_request_hook_fn, fluxipc_schema_type_t, bind_schema_fields(), cJSON (+82 more)
 
 ### Community 1 - "Community 1"
-Cohesion: 0.08
-Nodes (52): bench_http_seq(), bench_ipc_json_pos_seq(), bench_ipc_json_seq(), bench_ipc_seq(), bench_parallel(), env_long(), finish(), http_get_once() (+44 more)
+Cohesion: 0.12
+Nodes (28): cmd_call(), cmd_list(), main(), print_help(), print_json_doc(), fluxipc_list_cb, fluxipc_list_endpoints(), fluxipc_conn_t (+20 more)
 
 ### Community 2 - "Community 2"
 Cohesion: 0.05
@@ -95,15 +96,15 @@ Nodes (23): Compile-Time Registration via ELF Section (FLUXIPC_STATIC), Six-Laye
 
 ### Community 5 - "Community 5"
 Cohesion: 0.07
-Nodes (62): fluxipc_stop(), bool_from_string(), cJSON, fluxipc_json_request_t, fluxipc_json_response_t, errno_from_status(), fluxipc_json_bool(), fluxipc_json_double() (+54 more)
+Nodes (64): fluxipc_stop(), bool_from_string(), cJSON, fluxipc_json_request_t, fluxipc_json_response_t, errno_from_status(), fluxipc_json_bool(), fluxipc_json_double() (+56 more)
 
 ### Community 7 - "Community 7"
 Cohesion: 0.05
 Nodes (37): 1. Register endpoints, 3. Handler signatures, API Reference, Build, CLI, Client, Concurrency & control, Current quality gates (+29 more)
 
 ### Community 8 - "Community 8"
-Cohesion: 0.13
-Nodes (43): accept_http(), accept_unix(), fluxipc_conn_kind_t, fluxipc_conn_t, fluxipc_ctx_t, conn_alloc(), conn_close(), conn_poll() (+35 more)
+Cohesion: 0.14
+Nodes (41): accept_http(), accept_unix(), fluxipc_conn_kind_t, fluxipc_conn_t, fluxipc_ctx_t, conn_alloc(), conn_close(), conn_poll() (+33 more)
 
 ### Community 9 - "Community 9"
 Cohesion: 0.83
@@ -135,19 +136,23 @@ Nodes (4): Codebase Index, Config, Docs, Source
 
 ### Community 16 - "Community 16"
 Cohesion: 0.07
-Nodes (33): fluxipc_kv_t, fluxipc_find_content_length(), fluxipc_parse_query(), fluxipc_url_decode(), hexval(), main(), run_suite(), ut_cli() (+25 more)
+Nodes (32): fluxipc_kv_t, fluxipc_find_content_length(), fluxipc_parse_query(), fluxipc_url_decode(), hexval(), main(), run_suite(), ut_cli() (+24 more)
 
 ### Community 17 - "Community 17"
 Cohesion: 0.10
-Nodes (76): fluxipc_node_leaf(), fluxipc_tree_root(), fluxipc_call_json(), sock_conn_process(), fluxipc_conn_t, fluxipc_http_request_t, fluxipc_http_response_t, fluxipc_http_request_t (+68 more)
+Nodes (75): fluxipc_node_leaf(), fluxipc_tree_root(), fluxipc_call_json(), sock_conn_process(), fluxipc_conn_t, fluxipc_http_request_t, fluxipc_http_response_t, fluxipc_http_request_t (+67 more)
 
 ### Community 18 - "Community 18"
 Cohesion: 0.17
 Nodes (27): http_body(), http_get(), http_json(), http_raw(), http_request(), http_status(), ipc(), json_call() (+19 more)
 
+### Community 19 - "Community 19"
+Cohesion: 0.20
+Nodes (24): bench_http_seq(), bench_ipc_json_pos_seq(), bench_ipc_json_seq(), bench_ipc_seq(), bench_parallel(), env_long(), finish(), http_get_once() (+16 more)
+
 ### Community 20 - "Community 20"
 Cohesion: 0.12
-Nodes (23): fluxipc_poll(), fluxipc_http_request_t, fluxipc_http_response_t, cli_setup(), cli_teardown(), core_setup(), core_teardown(), test_init_invalid() (+15 more)
+Nodes (23): fluxipc_poll(), fluxipc_http_request_t, fluxipc_http_response_t, cli_setup(), cli_teardown(), test_poll_no_descriptors(), core_setup(), core_teardown() (+15 more)
 
 ### Community 21 - "Community 21"
 Cohesion: 0.12
@@ -170,10 +175,10 @@ Nodes (7): env.sh script, CMOCKA_PREFIX, FLUXIPC_TOOLS, LD_LIBRARY_PATH, MULL_FR
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `fluxipc_node_leaf()` connect `Community 17` to `Community 0`, `Community 2`, `Community 12`?**
-  _High betweenness centrality (0.100) - this node is a cross-community bridge._
+  _High betweenness centrality (0.099) - this node is a cross-community bridge._
 - **Why does `fluxipc_tree_root()` connect `Community 17` to `Community 0`, `Community 2`?**
   _High betweenness centrality (0.065) - this node is a cross-community bridge._
-- **Why does `fluxipc_call()` connect `Community 1` to `Community 17`, `Community 18`, `Community 2`?**
+- **Why does `fluxipc_call()` connect `Community 1` to `Community 2`, `Community 17`, `Community 18`, `Community 19`?**
   _High betweenness centrality (0.055) - this node is a cross-community bridge._
 - **Are the 62 inferred relationships involving `fluxipc_tree_root()` (e.g. with `register_endpoints()` and `test_call_json_success()`) actually correct?**
   _`fluxipc_tree_root()` has 62 INFERRED edges - model-reasoned connections that need verification._
