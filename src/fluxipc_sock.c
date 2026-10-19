@@ -94,9 +94,7 @@ static int send_unix_response(fluxipc_conn_t *c, int32_t status,
     if (!buf) return -1;
     memcpy(buf, &h, sizeof(h));
     if (len) memcpy(buf + sizeof(h), data, len);
-    int r = conn_respond(c, buf, total);
-    free(buf);
-    return r;
+    return conn_respond_own(c, buf, total);
 }
 
 static int send_json_error(fluxipc_conn_t *c, int rc,
@@ -238,15 +236,16 @@ int sock_conn_process(fluxipc_ctx_t *ctx, fluxipc_conn_t *c)
         return sock_conn_json(ctx, c, path, argc, argv);
 
     /* ── FLUXIPC_OP_CALL: invoke the leaf's IPC handler ── */
-    char *out = malloc(IPC_OUT_CAP);
-    if (!out) return -1;
+    if (!ctx->ipc_out) {
+        ctx->ipc_out = malloc(IPC_OUT_CAP);
+        if (!ctx->ipc_out) return -1;
+    }
     size_t out_len = 0;
     int rc = fluxipc_dispatch_ipc(ctx, path, argc, argv,
-                                  out, IPC_OUT_CAP, &out_len);
+                                  ctx->ipc_out, IPC_OUT_CAP, &out_len);
     if (rc < 0) out_len = 0;
 
-    int r = send_unix_response(c, rc, out, (uint32_t)out_len);
-    free(out);
+    int r = send_unix_response(c, rc, ctx->ipc_out, (uint32_t)out_len);
     return r < 0 ? -1 : 1;
 }
 

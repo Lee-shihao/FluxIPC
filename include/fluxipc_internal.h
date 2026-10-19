@@ -46,16 +46,22 @@ typedef struct {
 } __attribute__((packed)) fluxipc_resp_hdr_t;  /* 12 bytes */
 
 /* ─── Tree node ───────────────────────────────────────────────────────────── */
+/*
+ * Hot lookup fields (name + sibling/children links) are kept at the front so
+ * tree_find_child() touches as few cache lines as possible.  full_path and the
+ * method descriptor are cold until a match is found.
+ */
 struct fluxipc_node {
-    char                name[FLUXIPC_NAME_MAX];
-    char                full_path[FLUXIPC_PATH_MAX];
-    fluxipc_method_t    method;       /* copied; strings owned by the node */
-    int                 is_leaf;
-    uint32_t            id;
-
-    struct fluxipc_node *parent;
-    struct fluxipc_node *children;
+    char                 name[FLUXIPC_NAME_MAX];
     struct fluxipc_node *next_sibling;
+    struct fluxipc_node *children;
+    struct fluxipc_node *parent;
+    uint32_t             id;
+    int                  is_leaf;
+
+    fluxipc_method_t     method;      /* copied; strings owned by the node */
+
+    char                 full_path[FLUXIPC_PATH_MAX];
 };
 
 /* ─── Global server context ───────────────────────────────────────────────── */
@@ -69,6 +75,9 @@ typedef struct fluxipc_ctx_s {
     volatile int      running;
     uint32_t          next_id;
     int               http_fd;     /* TCP listener fd; -1 if HTTP disabled */
+
+    /* Reused per-call IPC output buffer (single-threaded dispatch). */
+    char             *ipc_out;
 
     /* Global request observation hooks */
     fluxipc_request_hook_fn pre_hook;
@@ -102,6 +111,8 @@ typedef struct fluxipc_conn {
 int  conn_poll(fluxipc_ctx_t *ctx);
 /** Queue a response for @p c (copies @p len bytes); returns 0/-1. */
 int  conn_respond(fluxipc_conn_t *c, const void *data, size_t len);
+/** Queue @p buf as the response and take ownership (no copy). */
+int  conn_respond_own(fluxipc_conn_t *c, char *buf, size_t len);
 /** Close and free a connection slot. */
 void conn_close(fluxipc_conn_t *c);
 /** Close every pooled connection (shutdown). */
@@ -173,6 +184,7 @@ cJSON *fluxipc_build_manifest(fluxipc_node_t *node, int recursive, int verbose);
 /* ─── Tree helpers ────────────────────────────────────────────────────────── */
 fluxipc_node_t *tree_find_child(fluxipc_node_t *parent, const char *name);
 fluxipc_node_t *tree_find_path(fluxipc_node_t *root, const char *path);
+
 fluxipc_node_t *tree_mkdir(fluxipc_node_t *parent, const char *name);
 fluxipc_node_t *tree_leaf(fluxipc_node_t *parent, const char *name,
                           const fluxipc_method_t *method);

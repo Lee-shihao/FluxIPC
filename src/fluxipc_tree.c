@@ -65,7 +65,6 @@ static int path_split(const char *path, char **tokens, int max_tokens,
         *slash = '\0';
         p = slash + 1;
     }
-    *copy_out = buf;
     return n;
 }
 
@@ -84,16 +83,19 @@ fluxipc_node_t *tree_find_path(fluxipc_node_t *root, const char *path)
     if (!root || !path || path[0] != '/') return NULL;
     if (strcmp(path, "/") == 0) return root;
 
+    /* Paths are bounded by FLUXIPC_PATH_MAX; avoid a heap allocation on
+     * every request by splitting a stack copy in place. */
+    char buf[FLUXIPC_PATH_MAX];
+    size_t len = strlen(path);
+    if (len >= sizeof(buf)) return NULL;
+    memcpy(buf, path, len + 1);
+
     char *tokens[64];
-    char *buf;
-    int   n = path_split(path, tokens, 64, &buf);
-    if (n < 0) return NULL;
+    int n = path_split(buf, tokens, 64);
 
     fluxipc_node_t *cur = root;
     for (int i = 0; i < n && cur; i++)
         cur = tree_find_child(cur, tokens[i]);
-
-    free(buf);
     return cur;
 }
 

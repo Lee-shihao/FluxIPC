@@ -122,6 +122,32 @@ static void test_conn_respond_grows(void **state)
     free(c.wbuf);
 }
 
+static void test_conn_respond_own(void **state)
+{
+    (void)state;
+    fluxipc_conn_t c;
+    memset(&c, 0, sizeof(c));
+    c.fd = -1;
+
+    char *buf = malloc(5);
+    assert_non_null(buf);
+    memcpy(buf, "hello", 5);
+
+    assert_int_equal(conn_respond_own(&c, buf, 5), 0);
+    assert_ptr_equal(c.wbuf, buf);
+    assert_int_equal(c.wlen, 5);
+    assert_int_equal(c.woff, 0);
+    assert_int_equal(c.state, FLUXIPC_CONN_WRITING);
+
+    conn_close(&c);
+    assert_null(c.wbuf);
+
+    /* NULL connection still takes ownership and frees the buffer. */
+    char *orphan = malloc(1);
+    assert_non_null(orphan);
+    assert_int_equal(conn_respond_own(NULL, orphan, 1), -1);
+}
+
 /* ── read state machine (socketpairs) ────────────────────────────────────── */
 
 static void make_nonblock(int fd)
@@ -305,6 +331,7 @@ int ut_conn(void)
         cmocka_unit_test(test_conn_respond_basic),
         cmocka_unit_test(test_conn_respond_empty),
         cmocka_unit_test(test_conn_respond_grows),
+        cmocka_unit_test(test_conn_respond_own),
         cmocka_unit_test(test_read_partial_then_complete),
         cmocka_unit_test(test_read_peer_closed),
         cmocka_unit_test(test_read_grows_request_buffer),

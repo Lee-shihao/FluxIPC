@@ -25,7 +25,7 @@
 #include <stdio.h>
 #include <errno.h>
 
-#define CONN_IO_CHUNK 8192
+#define CONN_IO_CHUNK 4096
 #define CONN_POLL_MS  10
 
 static fluxipc_conn_t g_conns[FLUXIPC_MAX_CONNS];
@@ -102,6 +102,18 @@ int conn_respond(fluxipc_conn_t *c, const void *data, size_t len)
         }
         memcpy(c->wbuf, data, len);
     }
+    c->wlen = len;
+    c->woff = 0;
+    c->state = FLUXIPC_CONN_WRITING;
+    return 0;
+}
+
+int conn_respond_own(fluxipc_conn_t *c, char *buf, size_t len)
+{
+    if (!c) { free(buf); return -1; }
+    free(c->wbuf);
+    c->wbuf = buf;
+    c->wcap = len;
     c->wlen = len;
     c->woff = 0;
     c->state = FLUXIPC_CONN_WRITING;

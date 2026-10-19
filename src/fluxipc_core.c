@@ -747,6 +747,7 @@ void fluxipc_destroy(void)
     ctx->root = NULL;
     pthread_mutex_unlock(&ctx->tree_lock);
     pthread_mutex_destroy(&ctx->tree_lock);
+    free(ctx->ipc_out);
     free(ctx);
 }
 

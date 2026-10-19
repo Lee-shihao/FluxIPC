@@ -178,8 +178,7 @@ static int respond_problem(fluxipc_conn_t *c, int status, const char *title,
 {
     http_buf_t o = { 0 };
     send_problem(&o, status, title, detail, instance, 0, NULL);
-    int r = conn_respond(c, o.p, o.len);
-    free(o.p);
+    int r = conn_respond_own(c, o.p, o.len);
     return r < 0 ? -1 : 1;
 }
 
@@ -547,8 +546,7 @@ int http_conn_process(fluxipc_ctx_t *ctx, fluxipc_conn_t *c)
     http_buf_t out = { 0 };
     route_request(ctx, &out, method, target, headers, header_count,
                   content_type, body, content_length);
-    int r = conn_respond(c, out.p, out.len);
-    free(out.p);
+    int r = conn_respond_own(c, out.p, out.len);
     return r < 0 ? -1 : 1;
 }
 
