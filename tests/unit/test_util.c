@@ -350,14 +350,18 @@ static void test_json_request_helpers(void **state)
     (void)state;
 
     cJSON *body = cJSON_Parse(
-        "{\"s\":\"body\",\"n\":7,\"d\":1.5,\"b\":true,\"strnum\":\"42\"}");
+        "{\"s\":\"body\",\"n\":7,\"d\":1.5,\"b\":true,"
+        "\"strnum\":\"42\",\"ds\":\"2.5\",\"bnum\":1,"
+        "\"badbool\":\"maybe\"}");
     assert_non_null(body);
 
     fluxipc_kv_t query[] = {
         { "q",      "query" },
         { "n2",     "9"     },
-        { "flag",   "yes"   },
-        { "noflag", "off"   },
+        { "flag",    "yes"   },
+        { "noflag",  "off"   },
+        { "badquery","maybe" },
+        { "dn",      "3.5"   },
     };
     fluxipc_json_request_t req = {
         .json        = body,
@@ -372,14 +376,20 @@ static void test_json_request_helpers(void **state)
     assert_int_equal(fluxipc_json_int(&req, "n", -1), 7);
     assert_int_equal(fluxipc_json_int(&req, "n2", -1), 9);
     assert_int_equal(fluxipc_json_int(&req, "strnum", -1), 42);
+    assert_int_equal(fluxipc_json_int(&req, "b", -1), 1);
     assert_int_equal(fluxipc_json_int(&req, "missing", -1), -1);
 
     assert_true(fluxipc_json_double(&req, "d", -1) == 1.5);
+    assert_true(fluxipc_json_double(&req, "ds", -1) == 2.5);
+    assert_true(fluxipc_json_double(&req, "dn", -1) == 3.5);
     assert_true(fluxipc_json_double(&req, "missing", -1) == -1);
 
     assert_int_equal(fluxipc_json_bool(&req, "b", 0), 1);
+    assert_int_equal(fluxipc_json_bool(&req, "bnum", 0), 1);
     assert_int_equal(fluxipc_json_bool(&req, "flag", 0), 1);
     assert_int_equal(fluxipc_json_bool(&req, "noflag", 1), 0);
+    assert_int_equal(fluxipc_json_bool(&req, "badbool", 7), 7);
+    assert_int_equal(fluxipc_json_bool(&req, "badquery", 8), 8);
     assert_int_equal(fluxipc_json_bool(&req, "missing", 1), 1);
 
     assert_true(fluxipc_json_has(&req, "s"));
