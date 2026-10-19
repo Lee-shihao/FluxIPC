@@ -220,8 +220,11 @@ int sock_conn_process(fluxipc_ctx_t *ctx, fluxipc_conn_t *c)
     if (h.op != FLUXIPC_OP_CALL && h.op != FLUXIPC_OP_CALL_JSON)
         return -1;
 
+    const char *raw_path = c->rbuf + sizeof(h);
+    if (memchr(raw_path, '\0', h.path_len) != NULL) return -1;
+
     char path[FLUXIPC_PATH_MAX];
-    memcpy(path, c->rbuf + sizeof(h), h.path_len);
+    memcpy(path, raw_path, h.path_len);
     path[h.path_len] = '\0';
 
     char *argv[FLUXIPC_MAX_ARGS];

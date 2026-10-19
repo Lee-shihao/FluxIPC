@@ -621,6 +621,12 @@ int main(void)
     rc = http_raw(HTTP_PORT, "BAD\r\n\r\n", resp, sizeof(resp));
     CHECK_EQ_INT(http_status(resp), 400);
 
+    /* %00 must not truncate the path and hit /system/info. */
+    rc = http_raw(HTTP_PORT,
+                  "GET /system/info%00evil HTTP/1.1\r\nHost: x\r\n\r\n",
+                  resp, sizeof(resp));
+    CHECK_EQ_INT(http_status(resp), 400);
+
     {
         size_t cap = 20 * 1024;
         char *raw = malloc(cap);
@@ -687,6 +693,16 @@ int main(void)
                     (uint16_t)strlen("/system/info"), 4, "abcd", 4);
     usleep(20 * 1000);
     CHECK_EQ_INT(server_alive(sock), 0);
+
+    {
+        const char nulpath[] = { '/', 's', 'y', 's', 't', 'e', 'm',
+                                 '/', 'i', 'n', 'f', 'o', '\0', 'x' };
+        send_bad_header(sock, FLUXIPC_PROTO_MAGIC, FLUXIPC_OP_CALL,
+                        (uint16_t)sizeof(nulpath), 0, nulpath,
+                        sizeof(nulpath));
+        usleep(20 * 1000);
+        CHECK_EQ_INT(server_alive(sock), 0);
+    }
 
     {
         int fd = unix_connect(sock);

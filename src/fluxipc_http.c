@@ -329,7 +329,12 @@ static void route_request(fluxipc_ctx_t *ctx, http_buf_t *out,
     size_t qlen = qraw ? strlen(qraw) : 0;
 
     char path[2048];
-    fluxipc_url_decode(target, path_len, path, sizeof(path));
+    size_t decoded = fluxipc_url_decode(target, path_len, path, sizeof(path));
+    if (memchr(path, '\0', decoded) != NULL) {
+        send_problem(out, 400, "Bad Request", "NUL byte in path", NULL,
+                     head_only, NULL);
+        return;
+    }
 
     size_t pl = strlen(path);
     while (pl > 1 && path[pl - 1] == '/') path[--pl] = '\0';

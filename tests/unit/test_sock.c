@@ -234,6 +234,27 @@ static size_t build_call_raw(unsigned char *buf, uint16_t op,
     return off;
 }
 
+static void test_process_path_nul(void **state)
+{
+    (void)state;
+    fluxipc_method_t m = { .ipc = record_ipc };
+    fluxipc_node_leaf(fluxipc_tree_root(), "r", &m);
+
+    const char path[] = { '/', 'r', '\0', 'x' };
+    fluxipc_req_hdr_t h = {
+        .magic = FLUXIPC_PROTO_MAGIC, .op = FLUXIPC_OP_CALL,
+        .path_len = sizeof(path), .arg_len = 0,
+    };
+    unsigned char buf[64];
+    memcpy(buf, &h, sizeof(h));
+    memcpy(buf + sizeof(h), path, sizeof(path));
+
+    fluxipc_conn_t c;
+    ut_conn_init(&c, buf, sizeof(h) + sizeof(path), FLUXIPC_CONN_UNIX);
+    assert_int_equal(sock_conn_process(g_ctx, &c), -1);
+    ut_conn_free(&c);
+}
+
 static void test_process_args_multiple(void **state)
 {
     (void)state;
@@ -690,6 +711,8 @@ int ut_sock(void)
         cmocka_unit_test_setup_teardown(test_client_truncation,
                                         sock_setup, sock_teardown),
         cmocka_unit_test_setup_teardown(test_call_alloc,
+                                        sock_setup, sock_teardown),
+        cmocka_unit_test_setup_teardown(test_process_path_nul,
                                         sock_setup, sock_teardown),
         cmocka_unit_test_setup_teardown(test_process_args_multiple,
                                         sock_setup, sock_teardown),
