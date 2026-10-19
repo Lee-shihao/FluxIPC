@@ -139,55 +139,41 @@ void tree_node_free(fluxipc_node_t *n)
     free(n);
 }
 
-/* ─── Path helpers ────────────────────────────────────────────────────────── */
-
-/**
- * Split an absolute path into components in place.
- * tokens[] points into @p path (which must be writable).
- * Returns token count.
- */
-static int path_split(char *path, char **tokens, int max_tokens)
-{
-    int n = 0;
-    char *p = path + 1; /* skip leading '/' */
-    while (*p && n < max_tokens) {
-        tokens[n++] = p;
-        char *slash = strchr(p, '/');
-        if (!slash) break;
-        *slash = '\0';
-        p = slash + 1;
-    }
-    return n;
-}
-
 /* ─── Lookup ──────────────────────────────────────────────────────────────── */
+
+static fluxipc_node_t *tree_find_child_n(fluxipc_node_t *parent,
+                                         const char *name, size_t len)
+{
+    if (!parent || !name || len >= FLUXIPC_NAME_MAX) return NULL;
+    for (fluxipc_node_t *c = parent->children; c; c = c->next_sibling)
+        if (c->name[len] == '\0' && memcmp(c->name, name, len) == 0)
+            return c;
+    return NULL;
+}
 
 fluxipc_node_t *tree_find_child(fluxipc_node_t *parent, const char *name)
 {
-    if (!parent || !name) return NULL;
-    for (fluxipc_node_t *c = parent->children; c; c = c->next_sibling)
-        if (strcmp(c->name, name) == 0) return c;
-    return NULL;
+    return name ? tree_find_child_n(parent, name, strlen(name)) : NULL;
 }
 
 fluxipc_node_t *tree_find_path(fluxipc_node_t *root, const char *path)
 {
     if (!root || !path || path[0] != '/') return NULL;
-    if (strcmp(path, "/") == 0) return root;
+    if (path[1] == '\0') return root;
 
-    /* Paths are bounded by FLUXIPC_PATH_MAX; avoid a heap allocation on
-     * every request by splitting a stack copy in place. */
-    char buf[FLUXIPC_PATH_MAX];
-    size_t len = strlen(path);
-    if (len >= sizeof(buf)) return NULL;
-    memcpy(buf, path, len + 1);
-
-    char *tokens[64];
-    int n = path_split(buf, tokens, 64);
-
+    /* Walk components in place: no path copy and no token array. */
     fluxipc_node_t *cur = root;
-    for (int i = 0; i < n && cur; i++)
-        cur = tree_find_child(cur, tokens[i]);
+    const char *p = path + 1;
+    while (*p && cur) {
+        while (*p == '/') p++;
+        if (!*p) break;
+
+        const char *slash = strchr(p, '/');
+        size_t len = slash ? (size_t)(slash - p) : strlen(p);
+        cur = tree_find_child_n(cur, p, len);
+        if (!cur || !slash) break;
+        p = slash + 1;
+    }
     return cur;
 }
 

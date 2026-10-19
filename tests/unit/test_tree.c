@@ -210,10 +210,10 @@ static void test_find_child_and_path(void **state)
     tree_destroy(root);
 }
 
-static void test_deep_path_token_cap(void **state)
+static void test_deep_path_walk(void **state)
 {
     (void)state;
-    /* Build a 70-level chain; tree_find_path only walks 64 components. */
+    /* Build a 70-level chain; tree_find_path walks every component. */
     fluxipc_node_t *root = make_root();
     fluxipc_node_t *cur  = root;
     for (int i = 0; i < 70; i++) {
@@ -225,7 +225,7 @@ static void test_deep_path_token_cap(void **state)
     /* full path exists all the way down */
     const char *full = cur->full_path;
     fluxipc_node_t *hit = tree_find_path(root, full);
-    assert_non_null(hit);            /* capped at 64 components, still a node */
+    assert_ptr_equal(hit, cur);
     tree_destroy(root);
 }
 
@@ -317,7 +317,7 @@ int ut_tree(void)
         cmocka_unit_test(test_leaf_default_methods),
         cmocka_unit_test(test_leaf_existing_name_fails),
         cmocka_unit_test(test_find_child_and_path),
-        cmocka_unit_test(test_deep_path_token_cap),
+        cmocka_unit_test(test_deep_path_walk),
         cmocka_unit_test(test_destroy_handles_null),
         cmocka_unit_test(test_schema_field_cache),
         cmocka_unit_test(test_schema_field_cache_merge_and_invalid),
