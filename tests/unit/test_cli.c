@@ -125,6 +125,24 @@ static void test_main_arg_errors(void **state)
     assert_int_equal(rc, 1);
     assert_non_null(strstr(out, "requires <path>"));
 
+    /* --json without a path is rejected */
+    char *json_nopath[] = { (char *)"fluxipc-cli", (char *)"srv",
+                            (char *)"--json", NULL };
+    ut_capture_begin();
+    rc = fluxipc_cli_main(3, json_nopath);
+    out = ut_capture_end();
+    assert_int_equal(rc, 1);
+    assert_non_null(strstr(out, "requires <path>"));
+
+    /* --json -X without a method value is rejected */
+    char *json_nomethod[] = { (char *)"fluxipc-cli", (char *)"srv",
+                              (char *)"--json", (char *)"-X", NULL };
+    ut_capture_begin();
+    rc = fluxipc_cli_main(4, json_nomethod);
+    out = ut_capture_end();
+    assert_int_equal(rc, 1);
+    assert_non_null(strstr(out, "requires a value"));
+
     /* unknown command */
     char *unknown[] = { (char *)"fluxipc-cli", (char *)"srv",
                         (char *)"--nope", NULL };
@@ -162,6 +180,47 @@ static void test_call_success(void **state)
     assert_non_null(strstr(out, "PONG"));
 }
 
+static void test_call_json_success(void **state)
+{
+    (void)state;
+    fluxipc_method_t m = {
+        .json   = ut_http_ok,
+        .data   = (void *)"JSON",
+        .schema = "{\"type\":\"object\",\"properties\":{"
+                  "\"a\":{\"type\":\"integer\"}}}",
+    };
+    fluxipc_node_leaf(fluxipc_tree_root(), "json", &m);
+
+    char *av[] = { (char *)"fluxipc-cli", (char *)ut_server_name(),
+                   (char *)"--json", (char *)"/json", NULL };
+    ut_capture_begin();
+    int rc = fluxipc_cli_main(4, av);
+    const char *out = ut_capture_end();
+    assert_int_equal(rc, 0);
+    assert_non_null(strstr(out, "handler"));
+    assert_non_null(strstr(out, "JSON"));
+
+    /* a JSON body defaults to POST and is forwarded to the handler */
+    char *av2[] = { (char *)"fluxipc-cli", (char *)ut_server_name(),
+                    (char *)"-j", (char *)"/json",
+                    (char *)"{\"a\":1}", NULL };
+    ut_capture_begin();
+    rc = fluxipc_cli_main(5, av2);
+    out = ut_capture_end();
+    assert_int_equal(rc, 0);
+    assert_non_null(strstr(out, "JSON"));
+
+    /* positional arguments bind to schema properties in order */
+    char *av3[] = { (char *)"fluxipc-cli", (char *)ut_server_name(),
+                    (char *)"--json", (char *)"/json",
+                    (char *)"7", NULL };
+    ut_capture_begin();
+    rc = fluxipc_cli_main(5, av3);
+    out = ut_capture_end();
+    assert_int_equal(rc, 0);
+    assert_non_null(strstr(out, "JSON"));
+}
+
 static void test_list_success(void **state)
 {
     (void)state;
@@ -193,6 +252,8 @@ int ut_cli(void)
         cmocka_unit_test(test_cmd_list_missing_server),
         cmocka_unit_test(test_main_arg_errors),
         cmocka_unit_test_setup_teardown(test_call_success,
+                                        cli_setup, cli_teardown),
+        cmocka_unit_test_setup_teardown(test_call_json_success,
                                         cli_setup, cli_teardown),
         cmocka_unit_test_setup_teardown(test_list_success,
                                         cli_setup, cli_teardown),

@@ -19,25 +19,25 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <unistd.h>
-#include <fcntl.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <errno.h>
+#include <time.h>
 
-#define CONN_IO_CHUNK 8192
+#define CONN_IO_CHUNK 4096
 #define CONN_POLL_MS  10
 
 static fluxipc_conn_t g_conns[FLUXIPC_MAX_CONNS];
 
-/* ─── helpers ───────────────────────────────────────────────────────────── */
-
-static int set_nonblocking(int fd)
+static uint64_t now_ms(void)
 {
-    int flags = fcntl(fd, F_GETFL, 0);
-    if (flags < 0) return -errno;
-    return fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0 ? -errno : 0;
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000u + (uint64_t)ts.tv_nsec / 1000000u;
 }
+
+/* ─── helpers ───────────────────────────────────────────────────────────── */
 
 void conn_close(fluxipc_conn_t *c)
 {
@@ -50,6 +50,7 @@ void conn_close(fluxipc_conn_t *c)
     c->rlen = c->rcap = 0;
     c->wlen = c->woff = c->wcap = 0;
     c->need = c->hdr_end = c->body_len = 0;
+    c->last_active_ms = 0;
 }
 
 void conn_pool_init(void)
@@ -83,6 +84,7 @@ static fluxipc_conn_t *conn_alloc(int fd, fluxipc_conn_kind_t kind)
         c->fd   = fd;
         c->kind = kind;
         c->state = FLUXIPC_CONN_READING;
+        c->last_active_ms = now_ms();
         c->rbuf = malloc(CONN_IO_CHUNK);
         if (!c->rbuf) { c->fd = -1; return NULL; }
         c->rcap = CONN_IO_CHUNK;
@@ -108,6 +110,18 @@ int conn_respond(fluxipc_conn_t *c, const void *data, size_t len)
     return 0;
 }
 
+int conn_respond_own(fluxipc_conn_t *c, char *buf, size_t len)
+{
+    if (!c) { free(buf); return -1; }
+    free(c->wbuf);
+    c->wbuf = buf;
+    c->wcap = len;
+    c->wlen = len;
+    c->woff = 0;
+    c->state = FLUXIPC_CONN_WRITING;
+    return 0;
+}
+
 /* ─── accept ────────────────────────────────────────────────────────────── */
 
 static void accept_unix(fluxipc_ctx_t *ctx)
@@ -115,9 +129,9 @@ static void accept_unix(fluxipc_ctx_t *ctx)
     for (;;) {
         struct sockaddr_un peer;
         socklen_t plen = sizeof(peer);
-        int fd = accept(ctx->server_fd, (struct sockaddr *)&peer, &plen);
+        int fd = accept4(ctx->server_fd, (struct sockaddr *)&peer, &plen,
+                         SOCK_NONBLOCK | SOCK_CLOEXEC);
         if (fd < 0) return;
-        set_nonblocking(fd);
         if (!conn_alloc(fd, FLUXIPC_CONN_UNIX)) close(fd);
     }
 }
@@ -127,9 +141,9 @@ static void accept_http(fluxipc_ctx_t *ctx)
     for (;;) {
         struct sockaddr_in peer;
         socklen_t plen = sizeof(peer);
-        int fd = accept(ctx->http_fd, (struct sockaddr *)&peer, &plen);
+        int fd = accept4(ctx->http_fd, (struct sockaddr *)&peer, &plen,
+                         SOCK_NONBLOCK | SOCK_CLOEXEC);
         if (fd < 0) return;
-        set_nonblocking(fd);
         int one = 1;
         setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
         if (!conn_alloc(fd, FLUXIPC_CONN_HTTP)) close(fd);
@@ -143,7 +157,11 @@ static void conn_write(fluxipc_conn_t *c)
     while (c->woff < c->wlen) {
         ssize_t n = send(c->fd, c->wbuf + c->woff, c->wlen - c->woff,
                          MSG_NOSIGNAL);
-        if (n > 0) { c->woff += (size_t)n; continue; }
+        if (n > 0) {
+            c->woff += (size_t)n;
+            c->last_active_ms = now_ms();
+            continue;
+        }
         if (n < 0 && errno == EINTR) continue;
         if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return;
         conn_close(c);
@@ -155,6 +173,7 @@ static void conn_write(fluxipc_conn_t *c)
 static void conn_read(fluxipc_ctx_t *ctx, fluxipc_conn_t *c)
 {
     int peer_closed = 0;
+    int got_data = 0;
 
     for (;;) {
         if (c->rlen == c->rcap) {
@@ -167,13 +186,15 @@ static void conn_read(fluxipc_ctx_t *ctx, fluxipc_conn_t *c)
             c->rcap = ncap;
         }
         ssize_t n = recv(c->fd, c->rbuf + c->rlen, c->rcap - c->rlen, 0);
-        if (n > 0) { c->rlen += (size_t)n; continue; }
+        if (n > 0) { c->rlen += (size_t)n; got_data = 1; continue; }
         if (n == 0) { peer_closed = 1; break; }
         if (errno == EINTR) continue;
         if (errno == EAGAIN || errno == EWOULDBLOCK) break;
         conn_close(c);
         return;
     }
+
+    if (got_data) c->last_active_ms = now_ms();
 
     int rc = (c->kind == FLUXIPC_CONN_UNIX)
                ? sock_conn_process(ctx, c)
@@ -184,6 +205,38 @@ static void conn_read(fluxipc_ctx_t *ctx, fluxipc_conn_t *c)
 }
 
 /* ─── event loop ────────────────────────────────────────────────────────── */
+
+/** Milliseconds until the next idle deadline, or UINT64_MAX if none. */
+static uint64_t conn_idle_wait_ms(fluxipc_ctx_t *ctx)
+{
+    uint64_t now = now_ms();
+    uint64_t wait = UINT64_MAX;
+
+    for (int i = 0; i < FLUXIPC_MAX_CONNS; i++) {
+        fluxipc_conn_t *c = &g_conns[i];
+        if (c->fd < 0) continue;
+
+        uint64_t elapsed = now >= c->last_active_ms
+                             ? now - c->last_active_ms : 0;
+        uint64_t rem = elapsed >= FLUXIPC_IDLE_TIMEOUT_MS
+                         ? 0 : FLUXIPC_IDLE_TIMEOUT_MS - elapsed;
+        if (rem < wait) wait = rem;
+    }
+    return wait;
+}
+
+static void conn_sweep_idle(fluxipc_ctx_t *ctx)
+{
+    (void)ctx;
+    uint64_t now = now_ms();
+    for (int i = 0; i < FLUXIPC_MAX_CONNS; i++) {
+        fluxipc_conn_t *c = &g_conns[i];
+        if (c->fd < 0) continue;
+        if (now >= c->last_active_ms &&
+            now - c->last_active_ms >= FLUXIPC_IDLE_TIMEOUT_MS)
+            conn_close(c);
+    }
+}
 
 int conn_poll(fluxipc_ctx_t *ctx)
 {
@@ -200,6 +253,10 @@ int conn_poll(fluxipc_ctx_t *ctx)
         FD_SET(ctx->http_fd, &rfds);
         if (ctx->http_fd > maxfd) maxfd = ctx->http_fd;
     }
+    if (ctx->wake_fd >= 0) {
+        FD_SET(ctx->wake_fd, &rfds);
+        if (ctx->wake_fd > maxfd) maxfd = ctx->wake_fd;
+    }
     for (int i = 0; i < FLUXIPC_MAX_CONNS; i++) {
         fluxipc_conn_t *c = &g_conns[i];
         if (c->fd < 0) continue;
@@ -208,10 +265,35 @@ int conn_poll(fluxipc_ctx_t *ctx)
         if (c->fd > maxfd) maxfd = c->fd;
     }
 
-    struct timeval tv = { .tv_sec = 0, .tv_usec = CONN_POLL_MS * 1000 };
-    int ret = select(maxfd + 1, &rfds, &wfds, NULL, &tv);
+    struct timeval tv;
+    struct timeval *tvp = NULL;
+    uint64_t idle_wait = conn_idle_wait_ms(ctx);
+
+    if (ctx->wake_fd < 0) {
+        uint64_t wait = CONN_POLL_MS;
+        if (idle_wait != UINT64_MAX && idle_wait < wait) wait = idle_wait;
+        tv.tv_sec  = (time_t)(wait / 1000);
+        tv.tv_usec = (suseconds_t)((wait % 1000) * 1000);
+        tvp = &tv;
+    } else if (idle_wait != UINT64_MAX) {
+        tv.tv_sec  = (time_t)(idle_wait / 1000);
+        tv.tv_usec = (suseconds_t)((idle_wait % 1000) * 1000);
+        tvp = &tv;   /* eventfd exists; still wake for idle deadlines */
+    }
+    int ret = select(maxfd + 1, &rfds, &wfds, NULL, tvp);
     if (ret < 0) { if (errno == EINTR) return 0; return -errno; }
-    if (ret == 0) return 0;
+    if (ret == 0) {
+        conn_sweep_idle(ctx);
+        return 0;
+    }
+
+    if (ctx->wake_fd >= 0 && FD_ISSET(ctx->wake_fd, &rfds)) {
+        uint64_t v;
+        ssize_t n = read(ctx->wake_fd, &v, sizeof(v));
+        (void)n;
+    }
+
+    conn_sweep_idle(ctx);
 
     if (ctx->server_fd >= 0 && FD_ISSET(ctx->server_fd, &rfds))
         accept_unix(ctx);

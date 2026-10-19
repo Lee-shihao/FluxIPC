@@ -15,6 +15,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <netinet/in.h>
+#include <pthread.h>
 
 /* ── fixtures ────────────────────────────────────────────────────────────── */
 
@@ -194,6 +195,15 @@ static void test_init_run_dir_exists(void **state)
     fluxipc_destroy();
 }
 
+static void *stop_after_delay(void *arg)
+{
+    (void)arg;
+    struct timespec ts = { 0, 20 * 1000 * 1000 };
+    nanosleep(&ts, NULL);
+    fluxipc_stop();
+    return NULL;
+}
+
 static void test_poll_and_stop(void **state)
 {
     (void)state;
@@ -201,8 +211,12 @@ static void test_poll_and_stop(void **state)
     assert_int_equal(fluxipc_poll(NULL), -EINVAL);   /* before init */
 
     ut_server_up();
+
+    /* conn_poll() blocks on select(); fluxipc_stop() wakes it via eventfd. */
+    pthread_t th;
+    assert_int_equal(pthread_create(&th, NULL, stop_after_delay, NULL), 0);
     assert_true(fluxipc_poll(NULL) >= 0);
-    fluxipc_stop();
+    pthread_join(th, NULL);
     assert_int_equal(g_ctx->running, 0);
     assert_int_equal(fluxipc_poll(NULL), -EINVAL);   /* after stop */
     ut_server_down();
@@ -258,7 +272,7 @@ static void test_registration(void **state)
     fluxipc_node_t *b = fluxipc_node_mkdir(a, "b");
     assert_non_null(b);
 
-    fluxipc_method_t m = { .ipc = ipc_handler, .http = http_handler,
+    fluxipc_method_t m = { .ipc = ipc_handler, .json = http_handler,
                            .summary = "sum" };
     fluxipc_node_t *c = fluxipc_node_leaf(b, "c", &m);
     fluxipc_node_t *d = fluxipc_node_leaf(b, "d", &m);
@@ -311,7 +325,7 @@ static void test_registration(void **state)
 static void test_register_path(void **state)
 {
     (void)state;
-    fluxipc_method_t m = { .ipc = ipc_handler, .http = http_handler,
+    fluxipc_method_t m = { .ipc = ipc_handler, .json = http_handler,
                            .summary = "sum" };
 
     /* deep path auto-creates every intermediate container */
@@ -442,43 +456,43 @@ static void test_register_merge(void **state)
     fluxipc_node_t *n = fluxipc_register_method("/m/x", &ipc_only);
     assert_non_null(n);
     assert_ptr_equal(n->method.ipc, ipc_handler);
-    assert_null(n->method.http);
+    assert_null(n->method.json);
     assert_int_equal(n->method.methods, FLUXIPC_M_DEFAULT);
     assert_string_equal(n->method.summary, "combined");
 
-    /* 2) HTTP side registered separately: same node, both handlers present */
-    fluxipc_method_t http_only = {
-        .http = http_handler, .data = &ctx, .methods = FLUXIPC_M_PUT,
+    /* 2) JSON side registered separately: same node, both handlers present */
+    fluxipc_method_t json_only = {
+        .json = http_handler, .data = &ctx, .methods = FLUXIPC_M_PUT,
     };
-    assert_ptr_equal(fluxipc_register_http("/m/x", &http_only), n);
+    assert_ptr_equal(fluxipc_register_json("/m/x", &json_only), n);
     assert_ptr_equal(n->method.ipc, ipc_handler);      /* kept */
-    assert_ptr_equal(n->method.http, http_handler);
+    assert_ptr_equal(n->method.json, http_handler);
     assert_ptr_equal(n->method.data, &ctx);
     assert_string_equal(n->method.summary, "combined");
     assert_int_equal(n->method.methods, FLUXIPC_M_PUT);
 
     /* 3) a later registration must not overwrite anything already set */
     fluxipc_method_t other = {
-        .ipc = ipc_handler2, .http = http_handler2,
+        .ipc = ipc_handler2, .http = http_handler2,   /* legacy alias */
         .data = (void *)1, .summary = "ignored", .methods = FLUXIPC_M_DELETE,
     };
     assert_ptr_equal(fluxipc_register_method("/m/x", &other), n);
     assert_ptr_equal(n->method.ipc, ipc_handler);
-    assert_ptr_equal(n->method.http, http_handler);
+    assert_ptr_equal(n->method.json, http_handler);
     assert_ptr_equal(n->method.data, &ctx);
     assert_string_equal(n->method.summary, "combined");
     assert_int_equal(n->method.methods, FLUXIPC_M_PUT);
 
-    /* 4) reverse order: HTTP first, then IPC */
-    fluxipc_node_t *r = fluxipc_register_http("/m/y", &http_only);
+    /* 4) reverse order: JSON first, then IPC (legacy alias) */
+    fluxipc_node_t *r = fluxipc_register_http("/m/y", &json_only);
     assert_non_null(r);
     assert_null(r->method.ipc);
     fluxipc_method_t ipc_only2 = { .ipc = ipc_handler2 };
     assert_ptr_equal(fluxipc_register_method("/m/y", &ipc_only2), r);
     assert_ptr_equal(r->method.ipc, ipc_handler2);
-    assert_ptr_equal(r->method.http, http_handler);
+    assert_ptr_equal(r->method.json, http_handler);
 
-    /* 5) fluxipc_register_http requires an HTTP handler */
+    /* 5) fluxipc_register_json requires a JSON handler */
     errno = 0;
     assert_null(fluxipc_register_http("/m/z", &ipc_only));
     assert_int_equal(errno, EINVAL);
@@ -500,7 +514,7 @@ static void test_register_legacy(void **state)
     assert_ptr_equal(n->method.ipc, ipc_handler);
     assert_string_equal(n->method.summary, "[args]");
     assert_ptr_equal(n->method.data, &ctx);
-    assert_null(n->method.http);
+    assert_null(n->method.json);
     assert_int_equal(n->method.methods, FLUXIPC_M_DEFAULT);
 
     /* NULL handler is rejected; NULL usage is accepted (empty summary) */
@@ -509,12 +523,12 @@ static void test_register_legacy(void **state)
     assert_int_equal(errno, EINVAL);
     assert_non_null(fluxipc_register("/legacy/c", NULL, 0, ipc_handler, NULL));
 
-    /* the HTTP side can complete a classic registration, same node */
-    fluxipc_node_t *h = fluxipc_register_http("/legacy/a",
+    /* the JSON side can complete a classic registration, same node */
+    fluxipc_node_t *h = fluxipc_register_json("/legacy/a",
         &FLUXIPC_METHOD(NULL, http_handler, "ignored", NULL, FLUXIPC_M_GET));
     assert_ptr_equal(h, n);
     assert_ptr_equal(n->method.ipc, ipc_handler);
-    assert_ptr_equal(n->method.http, http_handler);
+    assert_ptr_equal(n->method.json, http_handler);
     assert_string_equal(n->method.summary, "[args]");
 
     /* fluxipc_unregister() is the main alias for fluxipc_node_remove() */
@@ -588,7 +602,7 @@ static void test_manifest_all_methods(void **state)
 {
     (void)state;
     fluxipc_node_t *root = fluxipc_tree_root();
-    fluxipc_method_t m = { .ipc = ipc_handler, .http = http_handler,
+    fluxipc_method_t m = { .ipc = ipc_handler, .json = http_handler,
                            .methods = FLUXIPC_M_ALL };
     fluxipc_node_leaf(root, "all", &m);
 
@@ -659,7 +673,7 @@ static void test_manifest(void **state)
     fluxipc_node_t *a = fluxipc_node_mkdir(root, "a");
     fluxipc_node_t *b = fluxipc_node_mkdir(a, "b");
 
-    fluxipc_method_t m = { .ipc = ipc_handler, .http = http_handler,
+    fluxipc_method_t m = { .ipc = ipc_handler, .json = http_handler,
                            .summary = "S", .description = "D",
                            .schema = "{\"type\":\"object\"}",
                            .methods = FLUXIPC_M_GET | FLUXIPC_M_POST };
@@ -788,7 +802,7 @@ static void test_dispatch_http(void **state)
     (void)state;
     fluxipc_node_t *root = fluxipc_tree_root();
     fluxipc_node_t *a = fluxipc_node_mkdir(root, "a");
-    fluxipc_method_t m = { .ipc = ipc_handler, .http = http_handler,
+    fluxipc_method_t m = { .ipc = ipc_handler, .json = http_handler,
                            .data = (void *)"H" };
     fluxipc_node_t *c = fluxipc_node_leaf(a, "c", &m);
 
@@ -808,7 +822,7 @@ static void test_dispatch_http(void **state)
                         "H");
     cJSON_Delete(resp.json);
 
-    /* path with no HTTP handler → -ENOSYS */
+    /* path with no JSON handler → -ENOSYS */
     fluxipc_method_t ipc_only = { .ipc = ipc_handler };
     fluxipc_node_leaf(a, "ipconly", &ipc_only);
     memset(&req, 0, sizeof(req));
@@ -914,6 +928,151 @@ static void test_usage_zero_leaves(void **state)
     assert_non_null(strstr(out, "(none)"));
 }
 
+/* ── positional JSON binding ────────────────────────────────────────────── */
+
+static void test_bind_positional(void **state)
+{
+    (void)state;
+    fluxipc_node_t *root = fluxipc_tree_root();
+    cJSON *o = NULL;
+    int rc;
+
+    fluxipc_method_t types = {
+        .json = http_handler,
+        .schema = FLUXIPC_SCHEMA(
+            FLUXIPC_PROP_INT("i") "," FLUXIPC_PROP_NUMBER("n") ","
+            FLUXIPC_PROP_BOOL("b") "," FLUXIPC_PROP_STR("s") ","
+            FLUXIPC_PROP_ARRAY("arr", "string")),
+    };
+    assert_non_null(fluxipc_node_leaf(root, "bind_types", &types));
+    char *args[] = { (char *)"7", (char *)"1.5", (char *)"false",
+                     (char *)"hello", (char *)"x", (char *)"y" };
+    rc = fluxipc_json_bind_positional(g_ctx, "/bind_types", 6, args, &o);
+    assert_int_equal(rc, 0);
+    assert_int_equal(cJSON_GetObjectItem(o, "i")->valueint, 7);
+    assert_true(cJSON_GetObjectItem(o, "n")->valuedouble == 1.5);
+    assert_false(cJSON_IsTrue(cJSON_GetObjectItem(o, "b")));
+    assert_string_equal(cJSON_GetObjectItem(o, "s")->valuestring, "hello");
+    assert_int_equal(cJSON_GetArraySize(cJSON_GetObjectItem(o, "arr")), 2);
+    cJSON_Delete(o);
+    o = NULL;
+
+    /* strtod fallback for numbers JSON does not accept (leading zero). */
+    fluxipc_method_t fallback = {
+        .json = http_handler,
+        .schema = FLUXIPC_SCHEMA(FLUXIPC_PROP_INT("i")),
+    };
+    assert_non_null(fluxipc_node_leaf(root, "bind_fallback", &fallback));
+    char *fargs[] = { (char *)"007" };
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, "/bind_fallback",
+                                                  1, fargs, &o), 0);
+    assert_int_equal(cJSON_GetObjectItem(o, "i")->valueint, 7);
+    cJSON_Delete(o);
+    o = NULL;
+
+    /* invalid boolean */
+    fluxipc_method_t boolbad = {
+        .json = http_handler,
+        .schema = FLUXIPC_SCHEMA(FLUXIPC_PROP_BOOL("b")),
+    };
+    assert_non_null(fluxipc_node_leaf(root, "bind_boolbad", &boolbad));
+    char *bargs[] = { (char *)"maybe" };
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, "/bind_boolbad",
+                                                  1, bargs, &o), -EINVAL);
+
+    /* object + non-trailing array type checks */
+    fluxipc_method_t objarr = {
+        .json = http_handler,
+        .schema = FLUXIPC_SCHEMA(
+            FLUXIPC_PROP_ARRAY("arr", "integer") ","
+            FLUXIPC_PROP("obj", "object")),
+    };
+    assert_non_null(fluxipc_node_leaf(root, "bind_objarr", &objarr));
+    char *oargs[] = { (char *)"[1,2]", (char *)"{\"x\":1}" };
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, "/bind_objarr",
+                                                  2, oargs, &o), 0);
+    assert_true(cJSON_IsArray(cJSON_GetObjectItem(o, "arr")));
+    assert_true(cJSON_IsObject(cJSON_GetObjectItem(o, "obj")));
+    cJSON_Delete(o);
+    o = NULL;
+
+    char *obad[] = { (char *)"[1,2]", (char *)"[]" };
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, "/bind_objarr",
+                                                  2, obad, &o), -EINVAL);
+    char *abad[] = { (char *)"{}", (char *)"{\"x\":1}" };
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, "/bind_objarr",
+                                                  2, abad, &o), -EINVAL);
+
+    /* trailing untyped array collects strings */
+    fluxipc_method_t noitems = {
+        .json = http_handler,
+        .schema = FLUXIPC_SCHEMA(FLUXIPC_PROP("arr", "array")),
+    };
+    assert_non_null(fluxipc_node_leaf(root, "bind_noitems", &noitems));
+    char *nargs[] = { (char *)"a", (char *)"b" };
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, "/bind_noitems",
+                                                  2, nargs, &o), 0);
+    cJSON *arr = cJSON_GetObjectItem(o, "arr");
+    assert_int_equal(cJSON_GetArraySize(arr), 2);
+    assert_string_equal(cJSON_GetArrayItem(arr, 0)->valuestring, "a");
+    cJSON_Delete(o);
+    o = NULL;
+
+    /* invalid array item */
+    fluxipc_method_t baditem = {
+        .json = http_handler,
+        .schema = FLUXIPC_SCHEMA(FLUXIPC_PROP_ARRAY("arr", "integer")),
+    };
+    assert_non_null(fluxipc_node_leaf(root, "bind_baditem", &baditem));
+    char *iargs[] = { (char *)"1", (char *)"x" };
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, "/bind_baditem",
+                                                  2, iargs, &o), -EINVAL);
+
+    /* schema without properties / malformed schema */
+    fluxipc_method_t empty = {
+        .json = http_handler,
+        .schema = "{\"type\":\"object\"}",
+    };
+    assert_non_null(fluxipc_node_leaf(root, "bind_empty", &empty));
+    char *eargs[] = { (char *)"x" };
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, "/bind_empty",
+                                                  1, eargs, &o), -EINVAL);
+
+    fluxipc_method_t badschema = {
+        .json = http_handler,
+        .schema = "not-json",
+    };
+    assert_non_null(fluxipc_node_leaf(root, "bind_badschema", &badschema));
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, "/bind_badschema",
+                                                  1, eargs, &o), -EINVAL);
+
+    /* more arguments than properties */
+    fluxipc_method_t one = {
+        .json = http_handler,
+        .schema = FLUXIPC_SCHEMA(FLUXIPC_PROP_INT("i")),
+    };
+    assert_non_null(fluxipc_node_leaf(root, "bind_toomany", &one));
+    char *targs[] = { (char *)"1", (char *)"2" };
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, "/bind_toomany",
+                                                  2, targs, &o), -E2BIG);
+
+    /* no schema at all */
+    fluxipc_method_t noschema = { .json = http_handler };
+    assert_non_null(fluxipc_node_leaf(root, "bind_noschema", &noschema));
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, "/bind_noschema",
+                                                  1, eargs, &o), -EINVAL);
+
+    /* argument validation */
+    assert_int_equal(fluxipc_json_bind_positional(NULL, "/bind_types",
+                                                  1, args, &o), -EINVAL);
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, NULL,
+                                                  1, args, &o), -EINVAL);
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, "/bind_types",
+                                                  1, args, NULL), -EINVAL);
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, "/bind_types",
+                                                  0, NULL, &o), -EINVAL);
+}
+
 int ut_core(void)
 {
     const struct CMUnitTest tests[] = {
@@ -956,6 +1115,8 @@ int ut_core(void)
         cmocka_unit_test_setup_teardown(test_dispatch_ipc,
                                         core_setup, core_teardown),
         cmocka_unit_test_setup_teardown(test_dispatch_http,
+                                        core_setup, core_teardown),
+        cmocka_unit_test_setup_teardown(test_bind_positional,
                                         core_setup, core_teardown),
         cmocka_unit_test_setup_teardown(test_hooks,
                                         core_setup, core_teardown),

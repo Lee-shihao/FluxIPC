@@ -60,6 +60,6 @@ const char *ut_capture_end(void);
 int ut_ipc_echo(void *data, int argc, char **argv,
                 void *out, size_t out_cap, size_t *out_len);
 
-/** HTTP handler that stores @c data into a JSON object {"handler":data}. */
+/** JSON handler that stores @c data into {"handler":data}. */
 int ut_http_ok(void *data, const fluxipc_http_request_t *req,
                fluxipc_http_response_t *resp);

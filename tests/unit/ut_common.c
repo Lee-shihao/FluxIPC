@@ -75,6 +75,7 @@ void ut_server_pump_stop(void)
 {
     if (!g_pump_started) return;
     g_pump_run = 0;
+    fluxipc_stop();          /* wake a blocking select() */
     pthread_join(g_pump, NULL);
     g_pump_started = 0;
 }

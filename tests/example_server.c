@@ -1,9 +1,11 @@
 /**
  * example_server.c – FluxIPC demo server
  *
- * Every leaf implements BOTH transports:
+ * Every leaf implements BOTH representations:
  *   • an IPC handler  (positional argv → formatted text buffer)
- *   • an HTTP handler (parsed request → cJSON response)
+ *   • a JSON handler  (parsed JSON request → cJSON response)
+ *
+ * The same JSON handler serves HTTP and local `fluxipc-cli --json` calls.
  *
  * Try:
  *   HTTP   curl -s http://localhost:32100/system/info
@@ -11,6 +13,8 @@
  *                 -d '{"rate_hz":20}' http://localhost:32100/module/sensor/config
  *   IPC    fluxipc-cli example_server -c /system/info
  *   IPC    fluxipc-cli example_server -c /demo/arithmetic/add 7 3
+ *   IPC    fluxipc-cli example_server --json /system/info
+ *   IPC    fluxipc-cli example_server --json /demo/arithmetic/add '{"a":7,"b":3}'
  */
 
 #include "fluxipc.h"
@@ -40,41 +44,7 @@ static int ipc_out(char *out, size_t cap, size_t *len, const char *fmt, ...)
     return 0;
 }
 
-/* HTTP: read a named field from the JSON body, else a query parameter. */
-static const char *q_str(const fluxipc_http_request_t *r, const char *key,
-                         const char *def)
-{
-    if (r->json) {
-        const cJSON *v = cJSON_GetObjectItemCaseSensitive(r->json, key);
-        if (cJSON_IsString(v) && v->valuestring) return v->valuestring;
-    }
-    for (size_t i = 0; i < r->query_count; i++)
-        if (strcmp(r->query[i].key, key) == 0) return r->query[i].value;
-    return def;
-}
-
-static long q_int(const fluxipc_http_request_t *r, const char *key, long def)
-{
-    if (r->json) {
-        const cJSON *v = cJSON_GetObjectItemCaseSensitive(r->json, key);
-        if (cJSON_IsNumber(v)) return (long)v->valuedouble;
-        if (cJSON_IsString(v) && v->valuestring) return strtol(v->valuestring, NULL, 10);
-        if (cJSON_IsBool(v)) return cJSON_IsTrue(v) ? 1 : 0;
-    }
-    for (size_t i = 0; i < r->query_count; i++)
-        if (strcmp(r->query[i].key, key) == 0)
-            return strtol(r->query[i].value, NULL, 10);
-    return def;
-}
-
-static int http_error(fluxipc_http_response_t *resp, int status, const char *msg)
-{
-    resp->status = status;
-    cJSON *o = cJSON_CreateObject();
-    if (o) cJSON_AddStringToObject(o, "error", msg);
-    resp->json = o;
-    return 0;
-}
+/* Field access, verb checks and JSON error replies come from fluxipc.h. */
 
 /* ==========================================================================
  *  system
@@ -89,8 +59,8 @@ static int system_info_ipc(void *d, int argc, char **argv,
     return ipc_out(out, cap, len, "program=example_server pid=%d uid=%d",
                    getpid(), getuid());
 }
-static int system_info_http(void *d, const fluxipc_http_request_t *r,
-                            fluxipc_http_response_t *resp)
+static int system_info_json(void *d, const fluxipc_json_request_t *r,
+                            fluxipc_json_response_t *resp)
 {
     (void)d; (void)r;
     cJSON *o = cJSON_CreateObject();
@@ -110,8 +80,8 @@ static int system_uptime_ipc(void *d, int argc, char **argv,
     return ipc_out(out, cap, len, "uptime_seconds=%ld uptime_minutes=%ld",
                    up, up / 60);
 }
-static int system_uptime_http(void *d, const fluxipc_http_request_t *r,
-                              fluxipc_http_response_t *resp)
+static int system_uptime_json(void *d, const fluxipc_json_request_t *r,
+                              fluxipc_json_response_t *resp)
 {
     (void)d; (void)r;
     long up = (long)(time(NULL) - g_start_time);
@@ -129,8 +99,8 @@ static int system_version_ipc(void *d, int argc, char **argv,
     (void)d; (void)argc; (void)argv;
     return ipc_out(out, cap, len, "version=2.1.0 build_date=%s", __DATE__);
 }
-static int system_version_http(void *d, const fluxipc_http_request_t *r,
-                               fluxipc_http_response_t *resp)
+static int system_version_json(void *d, const fluxipc_json_request_t *r,
+                               fluxipc_json_response_t *resp)
 {
     (void)d; (void)r;
     cJSON *o = cJSON_CreateObject();
@@ -148,8 +118,8 @@ static int system_shutdown_ipc(void *d, int argc, char **argv,
     fluxipc_stop();
     return ipc_out(out, cap, len, "shutting down... bye!");
 }
-static int system_shutdown_http(void *d, const fluxipc_http_request_t *r,
-                                fluxipc_http_response_t *resp)
+static int system_shutdown_json(void *d, const fluxipc_json_request_t *r,
+                                fluxipc_json_response_t *resp)
 {
     (void)d; (void)r;
     fluxipc_stop();
@@ -181,8 +151,8 @@ static int sensor_status_ipc(void *d, int argc, char **argv,
                    g_sensor.temperature, g_sensor.humidity,
                    g_sensor.sample_rate_hz);
 }
-static int sensor_status_http(void *d, const fluxipc_http_request_t *r,
-                              fluxipc_http_response_t *resp)
+static int sensor_status_json(void *d, const fluxipc_json_request_t *r,
+                              fluxipc_json_response_t *resp)
 {
     (void)d; (void)r;
     cJSON *o = cJSON_CreateObject();
@@ -203,11 +173,11 @@ static int sensor_calibrate_ipc(void *d, int argc, char **argv,
     return ipc_out(out, cap, len, "calibration applied: offset=%s result=ok",
                    offset);
 }
-static int sensor_calibrate_http(void *d, const fluxipc_http_request_t *r,
-                                 fluxipc_http_response_t *resp)
+static int sensor_calibrate_json(void *d, const fluxipc_json_request_t *r,
+                                 fluxipc_json_response_t *resp)
 {
     (void)d;
-    const char *offset = q_str(r, "offset", "0");
+    const char *offset = fluxipc_json_str(r, "offset", "0");
     cJSON *o = cJSON_CreateObject();
     if (!o) return -ENOMEM;
     cJSON_AddStringToObject(o, "offset", offset);
@@ -223,12 +193,12 @@ static int sensor_config_ipc(void *d, int argc, char **argv,
     if (argc > 1) g_sensor.sample_rate_hz = atoi(argv[1]);
     return ipc_out(out, cap, len, "sample_rate=%d", g_sensor.sample_rate_hz);
 }
-static int sensor_config_http(void *d, const fluxipc_http_request_t *r,
-                              fluxipc_http_response_t *resp)
+static int sensor_config_json(void *d, const fluxipc_json_request_t *r,
+                              fluxipc_json_response_t *resp)
 {
     (void)d;
-    if (strcmp(r->method, "PUT") == 0 || strcmp(r->method, "POST") == 0) {
-        long rate = q_int(r, "rate_hz", -1);
+    if (FLUXIPC_VERB_IS_WRITE(r)) {
+        long rate = fluxipc_json_int(r, "rate_hz", -1);
         if (rate > 0) g_sensor.sample_rate_hz = (int)rate;
     }
     cJSON *o = cJSON_CreateObject();
@@ -256,13 +226,14 @@ static int motor_speed_ipc(void *d, int argc, char **argv,
     if (argc > 1) g_motor.speed_rpm = atoi(argv[1]);
     return ipc_out(out, cap, len, "speed=%d rpm", g_motor.speed_rpm);
 }
-static int motor_speed_http(void *d, const fluxipc_http_request_t *r,
-                            fluxipc_http_response_t *resp)
+static int motor_speed_json(void *d, const fluxipc_json_request_t *r,
+                            fluxipc_json_response_t *resp)
 {
     (void)d;
-    if (!g_motor.enabled) return http_error(resp, 409, "motor is disabled");
-    if (strcmp(r->method, "PUT") == 0 || strcmp(r->method, "POST") == 0) {
-        long rpm = q_int(r, "rpm", -1);
+    if (!g_motor.enabled)
+        return fluxipc_json_error(resp, -EBUSY, "motor is disabled");
+    if (FLUXIPC_VERB_IS_WRITE(r)) {
+        long rpm = fluxipc_json_int(r, "rpm", -1);
         if (rpm >= 0) g_motor.speed_rpm = (int)rpm;
     }
     cJSON *o = cJSON_CreateObject();
@@ -282,11 +253,12 @@ static int motor_position_ipc(void *d, int argc, char **argv,
     }
     return ipc_out(out, cap, len, "position=%d deg", g_motor.position_deg);
 }
-static int motor_position_http(void *d, const fluxipc_http_request_t *r,
-                               fluxipc_http_response_t *resp)
+static int motor_position_json(void *d, const fluxipc_json_request_t *r,
+                               fluxipc_json_response_t *resp)
 {
     (void)d; (void)r;
-    if (!g_motor.enabled) return http_error(resp, 409, "motor is disabled");
+    if (!g_motor.enabled)
+        return fluxipc_json_error(resp, -EBUSY, "motor is disabled");
     cJSON *o = cJSON_CreateObject();
     if (!o) return -ENOMEM;
     cJSON_AddNumberToObject(o, "position", g_motor.position_deg);
@@ -303,8 +275,8 @@ static int motor_stop_ipc(void *d, int argc, char **argv,
     return ipc_out(out, cap, len, "motor stopped: enabled=%d speed=%d",
                    g_motor.enabled, g_motor.speed_rpm);
 }
-static int motor_stop_http(void *d, const fluxipc_http_request_t *r,
-                           fluxipc_http_response_t *resp)
+static int motor_stop_json(void *d, const fluxipc_json_request_t *r,
+                           fluxipc_json_response_t *resp)
 {
     (void)d; (void)r;
     g_motor.enabled = 0;
@@ -338,14 +310,14 @@ static int config_log_level_ipc(void *d, int argc, char **argv,
     }
     return ipc_out(out, cap, len, "log_level=%d", g_log_level);
 }
-static int config_log_level_http(void *d, const fluxipc_http_request_t *r,
-                                 fluxipc_http_response_t *resp)
+static int config_log_level_json(void *d, const fluxipc_json_request_t *r,
+                                 fluxipc_json_response_t *resp)
 {
     (void)d;
-    if (strcmp(r->method, "PUT") == 0 || strcmp(r->method, "POST") == 0) {
-        long lvl = q_int(r, "level", g_log_level);
+    if (FLUXIPC_VERB_IS_WRITE(r)) {
+        long lvl = fluxipc_json_int(r, "level", g_log_level);
         if (lvl < 0 || lvl > 5)
-            return http_error(resp, 422, "level must be 0-5");
+            return fluxipc_json_error(resp, -ERANGE, "level must be 0-5");
         g_log_level = (int)lvl;
     }
     cJSON *o = cJSON_CreateObject();
@@ -362,12 +334,12 @@ static int config_max_clients_ipc(void *d, int argc, char **argv,
     if (argc > 1) g_max_clients = atoi(argv[1]);
     return ipc_out(out, cap, len, "max_clients=%d", g_max_clients);
 }
-static int config_max_clients_http(void *d, const fluxipc_http_request_t *r,
-                                   fluxipc_http_response_t *resp)
+static int config_max_clients_json(void *d, const fluxipc_json_request_t *r,
+                                   fluxipc_json_response_t *resp)
 {
     (void)d;
-    if (strcmp(r->method, "PUT") == 0 || strcmp(r->method, "POST") == 0) {
-        long n = q_int(r, "max_clients", -1);
+    if (FLUXIPC_VERB_IS_WRITE(r)) {
+        long n = fluxipc_json_int(r, "max_clients", -1);
         if (n > 0) g_max_clients = (int)n;
     }
     cJSON *o = cJSON_CreateObject();
@@ -393,8 +365,8 @@ static int demo_echo_ipc(void *d, int argc, char **argv,
     *len = (size_t)(off > 0 ? off : 0);
     return 0;
 }
-static int demo_echo_http(void *d, const fluxipc_http_request_t *r,
-                          fluxipc_http_response_t *resp)
+static int demo_echo_json(void *d, const fluxipc_json_request_t *r,
+                          fluxipc_json_response_t *resp)
 {
     (void)d;
     cJSON *arr = cJSON_CreateArray();
@@ -421,8 +393,8 @@ static int demo_counter_ipc(void *d, int argc, char **argv,
     int val = __sync_fetch_and_add(&g_counter, 1);
     return ipc_out(out, cap, len, "counter=%d", val);
 }
-static int demo_counter_http(void *d, const fluxipc_http_request_t *r,
-                             fluxipc_http_response_t *resp)
+static int demo_counter_json(void *d, const fluxipc_json_request_t *r,
+                             fluxipc_json_response_t *resp)
 {
     (void)d; (void)r;
     int val = __sync_fetch_and_add(&g_counter, 1);
@@ -441,12 +413,12 @@ static int demo_add_ipc(void *d, int argc, char **argv,
     int b = (argc > 2) ? atoi(argv[2]) : 0;
     return ipc_out(out, cap, len, "add: %d + %d = %d", a, b, a + b);
 }
-static int demo_add_http(void *d, const fluxipc_http_request_t *r,
-                         fluxipc_http_response_t *resp)
+static int demo_add_json(void *d, const fluxipc_json_request_t *r,
+                         fluxipc_json_response_t *resp)
 {
     (void)d;
-    long a = q_int(r, "a", 0);
-    long b = q_int(r, "b", 0);
+    long a = fluxipc_json_int(r, "a", 0);
+    long b = fluxipc_json_int(r, "b", 0);
     cJSON *o = cJSON_CreateObject();
     if (!o) return -ENOMEM;
     cJSON_AddNumberToObject(o, "a", a);
@@ -464,12 +436,12 @@ static int demo_mul_ipc(void *d, int argc, char **argv,
     int b = (argc > 2) ? atoi(argv[2]) : 0;
     return ipc_out(out, cap, len, "mul: %d * %d = %d", a, b, a * b);
 }
-static int demo_mul_http(void *d, const fluxipc_http_request_t *r,
-                         fluxipc_http_response_t *resp)
+static int demo_mul_json(void *d, const fluxipc_json_request_t *r,
+                         fluxipc_json_response_t *resp)
 {
     (void)d;
-    long a = q_int(r, "a", 0);
-    long b = q_int(r, "b", 0);
+    long a = fluxipc_json_int(r, "a", 0);
+    long b = fluxipc_json_int(r, "b", 0);
     cJSON *o = cJSON_CreateObject();
     if (!o) return -ENOMEM;
     cJSON_AddNumberToObject(o, "a", a);
@@ -497,11 +469,11 @@ static int device_name_ipc(void *data, int argc, char **argv,
     if (argc > 1) snprintf(ctx->name, sizeof(ctx->name), "%s", argv[1]);
     return ipc_out(out, cap, len, "name: %s", ctx->name);
 }
-static int device_name_http(void *data, const fluxipc_http_request_t *r,
-                            fluxipc_http_response_t *resp)
+static int device_name_json(void *data, const fluxipc_json_request_t *r,
+                            fluxipc_json_response_t *resp)
 {
     device_ctx_t *ctx = data;
-    const char *nv = q_str(r, "name", NULL);
+    const char *nv = fluxipc_json_str(r, "name", NULL);
     if (nv) snprintf(ctx->name, sizeof(ctx->name), "%s", nv);
     cJSON *o = cJSON_CreateObject();
     if (!o) return -ENOMEM;
@@ -525,17 +497,17 @@ static int device_value_ipc(void *data, int argc, char **argv,
     }
     return ipc_out(out, cap, len, "value: %d", ctx->value);
 }
-static int device_value_http(void *data, const fluxipc_http_request_t *r,
-                             fluxipc_http_response_t *resp)
+static int device_value_json(void *data, const fluxipc_json_request_t *r,
+                             fluxipc_json_response_t *resp)
 {
     device_ctx_t *ctx = data;
-    if (strcmp(r->method, "PUT") == 0 || strcmp(r->method, "POST") == 0) {
-        long v = q_int(r, "value", ctx->value);
+    if (FLUXIPC_VERB_IS_WRITE(r)) {
+        long v = fluxipc_json_int(r, "value", ctx->value);
         if (v < ctx->min_val || v > ctx->max_val) {
             char msg[96];
             snprintf(msg, sizeof(msg), "value out of range [%d, %d]",
                      ctx->min_val, ctx->max_val);
-            return http_error(resp, 422, msg);
+            return fluxipc_json_error(resp, -ERANGE, msg);
         }
         ctx->value = (int)v;
     }
@@ -555,8 +527,8 @@ static int device_reset_ipc(void *data, int argc, char **argv,
     return ipc_out(out, cap, len, "device %s reset: value=%d",
                    ctx->name, ctx->value);
 }
-static int device_reset_http(void *data, const fluxipc_http_request_t *r,
-                             fluxipc_http_response_t *resp)
+static int device_reset_json(void *data, const fluxipc_json_request_t *r,
+                             fluxipc_json_response_t *resp)
 {
     (void)r;
     device_ctx_t *ctx = data;
@@ -577,8 +549,8 @@ static int device_info_ipc(void *data, int argc, char **argv,
     return ipc_out(out, cap, len, "name=%s value=%d range=[%d,%d]",
                    ctx->name, ctx->value, ctx->min_val, ctx->max_val);
 }
-static int device_info_http(void *data, const fluxipc_http_request_t *r,
-                            fluxipc_http_response_t *resp)
+static int device_info_json(void *data, const fluxipc_json_request_t *r,
+                            fluxipc_json_response_t *resp)
 {
     (void)r;
     device_ctx_t *ctx = data;
@@ -612,13 +584,13 @@ static void register_device(const char *base, const char *name,
 
     snprintf(path, sizeof(path), "%s/name", base);
     fluxipc_register_method(path, &FLUXIPC_METHOD_D(
-        device_name_ipc, device_name_http, ctx,
+        device_name_ipc, device_name_json, ctx,
         "Get or set the device name", NULL,
         FLUXIPC_M_GET | FLUXIPC_M_PUT));
 
     snprintf(path, sizeof(path), "%s/value", base);
     fluxipc_register_method(path, &FLUXIPC_METHOD_D(
-        device_value_ipc, device_value_http, ctx,
+        device_value_ipc, device_value_json, ctx,
         "Get or set the device value (range checked)",
         "{\"type\":\"object\",\"properties\":{"
         "\"value\":{\"type\":\"integer\"}}}",
@@ -626,12 +598,12 @@ static void register_device(const char *base, const char *name,
 
     snprintf(path, sizeof(path), "%s/reset", base);
     fluxipc_register_method(path, &FLUXIPC_METHOD_D(
-        device_reset_ipc, device_reset_http, ctx,
+        device_reset_ipc, device_reset_json, ctx,
         "Reset the device value to 0", NULL, FLUXIPC_M_POST));
 
     snprintf(path, sizeof(path), "%s/info", base);
     fluxipc_register_method(path, &FLUXIPC_METHOD_D(
-        device_info_ipc, device_info_http, ctx,
+        device_info_ipc, device_info_json, ctx,
         "Show full device info", NULL, FLUXIPC_M_GET));
 }
 
@@ -661,37 +633,37 @@ static void register_endpoints(void)
 {
     /* One row per endpoint: intermediate containers are created for us. */
     static const fluxipc_endpoint_t endpoints[] = {
-        { "/system/info",     FLUXIPC_METHOD(system_info_ipc,     system_info_http,     "Show server process info",      NULL, FLUXIPC_M_GET) },
-        { "/system/uptime",   FLUXIPC_METHOD(system_uptime_ipc,   system_uptime_http,   "Show server uptime",            NULL, FLUXIPC_M_GET) },
-        { "/system/version",  FLUXIPC_METHOD(system_version_ipc,  system_version_http,  "Show server version and build date", NULL, FLUXIPC_M_GET) },
-        { "/system/shutdown", FLUXIPC_METHOD(system_shutdown_ipc, system_shutdown_http, "Gracefully stop the server",    NULL, FLUXIPC_M_POST) },
+        { "/system/info",     FLUXIPC_METHOD(system_info_ipc,     system_info_json,     "Show server process info",      NULL, FLUXIPC_M_GET) },
+        { "/system/uptime",   FLUXIPC_METHOD(system_uptime_ipc,   system_uptime_json,   "Show server uptime",            NULL, FLUXIPC_M_GET) },
+        { "/system/version",  FLUXIPC_METHOD(system_version_ipc,  system_version_json,  "Show server version and build date", NULL, FLUXIPC_M_GET) },
+        { "/system/shutdown", FLUXIPC_METHOD(system_shutdown_ipc, system_shutdown_json, "Gracefully stop the server",    NULL, FLUXIPC_M_POST) },
 
-        { "/module/sensor/status",    FLUXIPC_METHOD(sensor_status_ipc,    sensor_status_http,    "Query current sensor readings", NULL, FLUXIPC_M_GET) },
-        { "/module/sensor/calibrate", FLUXIPC_METHOD(sensor_calibrate_ipc, sensor_calibrate_http, "Apply temperature calibration offset",
-                                                     "{\"type\":\"object\",\"properties\":{\"offset\":{\"type\":\"number\"}}}", FLUXIPC_M_POST) },
-        { "/module/sensor/config",    FLUXIPC_METHOD(sensor_config_ipc,    sensor_config_http,    "Get or set the sensor sample rate",
-                                                     "{\"type\":\"object\",\"properties\":{\"rate_hz\":{\"type\":\"integer\"}}}",
+        { "/module/sensor/status",    FLUXIPC_METHOD(sensor_status_ipc,    sensor_status_json,    "Query current sensor readings", NULL, FLUXIPC_M_GET) },
+        { "/module/sensor/calibrate", FLUXIPC_METHOD(sensor_calibrate_ipc, sensor_calibrate_json, "Apply temperature calibration offset",
+                                                     FLUXIPC_SCHEMA(FLUXIPC_PROP_NUMBER("offset")), FLUXIPC_M_POST) },
+        { "/module/sensor/config",    FLUXIPC_METHOD(sensor_config_ipc,    sensor_config_json,    "Get or set the sensor sample rate",
+                                                     FLUXIPC_SCHEMA(FLUXIPC_PROP_INT("rate_hz")),
                                                      FLUXIPC_M_GET | FLUXIPC_M_PUT) },
-        { "/module/motor/speed",    FLUXIPC_METHOD(motor_speed_ipc,    motor_speed_http,    "Get or set motor speed",
-                                                    "{\"type\":\"object\",\"properties\":{\"rpm\":{\"type\":\"integer\"}}}",
+        { "/module/motor/speed",    FLUXIPC_METHOD(motor_speed_ipc,    motor_speed_json,    "Get or set motor speed",
+                                                    FLUXIPC_SCHEMA(FLUXIPC_PROP_INT("rpm")),
                                                     FLUXIPC_M_GET | FLUXIPC_M_PUT) },
-        { "/module/motor/position", FLUXIPC_METHOD(motor_position_ipc, motor_position_http, "Query current motor position", NULL, FLUXIPC_M_GET) },
-        { "/module/motor/stop",     FLUXIPC_METHOD(motor_stop_ipc,     motor_stop_http,     "Emergency stop motor",        NULL, FLUXIPC_M_POST) },
+        { "/module/motor/position", FLUXIPC_METHOD(motor_position_ipc, motor_position_json, "Query current motor position", NULL, FLUXIPC_M_GET) },
+        { "/module/motor/stop",     FLUXIPC_METHOD(motor_stop_ipc,     motor_stop_json,     "Emergency stop motor",        NULL, FLUXIPC_M_POST) },
 
-        { "/config/log_level",   FLUXIPC_METHOD(config_log_level_ipc,   config_log_level_http,   "Get or set server log level (0-5)", NULL,
+        { "/config/log_level",   FLUXIPC_METHOD(config_log_level_ipc,   config_log_level_json,   "Get or set server log level (0-5)", NULL,
                                                  FLUXIPC_M_GET | FLUXIPC_M_PUT) },
-        { "/config/max_clients", FLUXIPC_METHOD(config_max_clients_ipc, config_max_clients_http, "Get or set max concurrent clients", NULL,
+        { "/config/max_clients", FLUXIPC_METHOD(config_max_clients_ipc, config_max_clients_json, "Get or set max concurrent clients", NULL,
                                                  FLUXIPC_M_GET | FLUXIPC_M_PUT) },
 
-        { "/demo/echo",    FLUXIPC_METHOD(demo_echo_ipc,    demo_echo_http,    "Echo back all arguments",
-                                           "{\"type\":\"object\",\"properties\":{\"args\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}}}",
+        { "/demo/echo",    FLUXIPC_METHOD(demo_echo_ipc,    demo_echo_json,    "Echo back all arguments",
+                                           FLUXIPC_SCHEMA(FLUXIPC_PROP_ARRAY("args", "string")),
                                            FLUXIPC_M_POST) },
-        { "/demo/counter", FLUXIPC_METHOD(demo_counter_ipc, demo_counter_http, "Atomically increment and return counter", NULL, FLUXIPC_M_GET) },
-        { "/demo/arithmetic/add", FLUXIPC_METHOD(demo_add_ipc, demo_add_http, "Add two integers",
-                                                  "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"integer\"},\"b\":{\"type\":\"integer\"}}}",
+        { "/demo/counter", FLUXIPC_METHOD(demo_counter_ipc, demo_counter_json, "Atomically increment and return counter", NULL, FLUXIPC_M_GET) },
+        { "/demo/arithmetic/add", FLUXIPC_METHOD(demo_add_ipc, demo_add_json, "Add two integers",
+                                                  FLUXIPC_SCHEMA(FLUXIPC_PROP_INT("a") "," FLUXIPC_PROP_INT("b")),
                                                   FLUXIPC_M_GET | FLUXIPC_M_POST) },
-        { "/demo/arithmetic/mul", FLUXIPC_METHOD(demo_mul_ipc, demo_mul_http, "Multiply two integers",
-                                                  "{\"type\":\"object\",\"properties\":{\"a\":{\"type\":\"integer\"},\"b\":{\"type\":\"integer\"}}}",
+        { "/demo/arithmetic/mul", FLUXIPC_METHOD(demo_mul_ipc, demo_mul_json, "Multiply two integers",
+                                                  FLUXIPC_SCHEMA(FLUXIPC_PROP_INT("a") "," FLUXIPC_PROP_INT("b")),
                                                   FLUXIPC_M_GET | FLUXIPC_M_POST) },
     };
     fluxipc_register_all(endpoints, sizeof(endpoints) / sizeof(endpoints[0]));

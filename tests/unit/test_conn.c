@@ -122,6 +122,32 @@ static void test_conn_respond_grows(void **state)
     free(c.wbuf);
 }
 
+static void test_conn_respond_own(void **state)
+{
+    (void)state;
+    fluxipc_conn_t c;
+    memset(&c, 0, sizeof(c));
+    c.fd = -1;
+
+    char *buf = malloc(5);
+    assert_non_null(buf);
+    memcpy(buf, "hello", 5);
+
+    assert_int_equal(conn_respond_own(&c, buf, 5), 0);
+    assert_ptr_equal(c.wbuf, buf);
+    assert_int_equal(c.wlen, 5);
+    assert_int_equal(c.woff, 0);
+    assert_int_equal(c.state, FLUXIPC_CONN_WRITING);
+
+    conn_close(&c);
+    assert_null(c.wbuf);
+
+    /* NULL connection still takes ownership and frees the buffer. */
+    char *orphan = malloc(1);
+    assert_non_null(orphan);
+    assert_int_equal(conn_respond_own(NULL, orphan, 1), -1);
+}
+
 /* ── read state machine (socketpairs) ────────────────────────────────────── */
 
 static void make_nonblock(int fd)
@@ -277,20 +303,47 @@ static void test_write_partial_then_drain(void **state)
 
 /* ── poll with no descriptors ────────────────────────────────────────────── */
 
+static void test_idle_timeout(void **state)
+{
+    (void)state;
+    ut_server_up();
+    conn_pool_init();
+
+    int fds[2];
+    assert_int_equal(socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+    int idx = fluxipc_ut_conn_alloc(fds[0], FLUXIPC_CONN_UNIX);
+    assert_true(idx >= 0);
+
+    fluxipc_conn_t *c = fluxipc_ut_conn(idx);
+    c->last_active_ms = 1;       /* far older than the monotonic clock */
+
+    int rc = conn_poll(g_ctx);   /* immediate idle deadline */
+    int closed = (c->fd == -1);
+
+    close(fds[1]);
+    ut_server_down();
+
+    assert_int_equal(rc, 0);
+    assert_true(closed);
+}
+
 static void test_poll_no_descriptors(void **state)
 {
     (void)state;
     ut_server_up();
     conn_pool_init();
-    int saved_srv = g_ctx->server_fd;
+    int saved_srv  = g_ctx->server_fd;
     int saved_http = g_ctx->http_fd;
+    int saved_wake = g_ctx->wake_fd;
     g_ctx->server_fd = -1;
     g_ctx->http_fd   = -1;
+    g_ctx->wake_fd   = -1;   /* exercise the timeout fallback */
 
     assert_int_equal(conn_poll(g_ctx), 0);   /* select timeout, no error */
 
     g_ctx->server_fd = saved_srv;
     g_ctx->http_fd   = saved_http;
+    g_ctx->wake_fd   = saved_wake;
     ut_server_down();
 }
 
@@ -305,11 +358,13 @@ int ut_conn(void)
         cmocka_unit_test(test_conn_respond_basic),
         cmocka_unit_test(test_conn_respond_empty),
         cmocka_unit_test(test_conn_respond_grows),
+        cmocka_unit_test(test_conn_respond_own),
         cmocka_unit_test(test_read_partial_then_complete),
         cmocka_unit_test(test_read_peer_closed),
         cmocka_unit_test(test_read_grows_request_buffer),
         cmocka_unit_test(test_write_to_closed_peer),
         cmocka_unit_test(test_write_partial_then_drain),
+        cmocka_unit_test(test_idle_timeout),
         cmocka_unit_test(test_poll_no_descriptors),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);

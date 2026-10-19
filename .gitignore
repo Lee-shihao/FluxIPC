@@ -7,6 +7,7 @@ build/
 /fluxipc-ut
 /fluxipc-ut-asan
 /fluxipc-it
+/fluxipc-bench
 /example_server
 /example_client
 

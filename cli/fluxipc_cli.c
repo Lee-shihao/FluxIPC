@@ -34,19 +34,30 @@ static void print_help(const char *argv0)
         "Usage:\n"
         "  %s <server>                                  list registered IPC paths\n"
         "  %s <server> -l, --list                       list registered IPC paths\n"
-        "  %s <server> -c, --call <path> [args...]      call one endpoint\n"
+        "  %s <server> -c, --call <path> [args...]      call one endpoint (text)\n"
+        "  %s <server> -j, --json [-X <method>] <path> [args...]\n"
+        "                                               call and return JSON\n"
         "  %s <server> -i, --interactive                enter the REPL (Tab completes)\n"
         "  %s -h, --help                                show this message\n"
         "\nOptions:\n"
-        "  -h, --help    Show this message\n"
+        "  -h, --help          Show this message\n"
+        "  -X, --method <m>    HTTP verb for --json (GET/POST/PUT/PATCH/DELETE)\n"
+        "\nJSON arguments:\n"
+        "  a single argument starting with '{' or '[' is the JSON request body\n"
+        "  key=value arguments become query parameters\n"
+        "  bare arguments bind to the endpoint schema properties in order\n"
         "\nExamples:\n"
         "  %s myapp\n"
         "  %s myapp --list\n"
         "  %s myapp --call /devices/stub/xxx/name\n"
         "  %s myapp -c /demo/arithmetic/add 7 3\n"
+        "  %s myapp --json /system/info\n"
+        "  %s myapp --json /demo/arithmetic/add '{\"a\":7,\"b\":3}'\n"
+        "  %s myapp --json /demo/arithmetic/add 7 3\n"
+        "  %s myapp --json -X PUT /module/sensor/config '{\"rate_hz\":20}'\n"
         "  %s myapp -i\n",
-        argv0, argv0, argv0, argv0, argv0,
-        argv0, argv0, argv0, argv0, argv0);
+        argv0, argv0, argv0, argv0, argv0, argv0,
+        argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0);
 }
 
 static void print_list_entry(const char *path, uint32_t id,
@@ -73,27 +84,54 @@ static int cmd_list(const char *prog_name)
     return 0;
 }
 
+static void print_json_doc(const char *text, size_t len)
+{
+    cJSON *j = cJSON_ParseWithLength(text, len);
+    char  *pretty = j ? cJSON_Print(j) : NULL;
+    if (pretty) {
+        printf("%s\n", pretty);
+        free(pretty);
+    } else if (len > 0) {
+        fwrite(text, 1, len, stdout);
+        putchar('\n');
+    }
+    cJSON_Delete(j);
+}
+
 /** Call one endpoint over the server's Unix socket.
- *  @p argc / @p argv follow the IPC contract: argv[0] is the endpoint path,
- *  argv[1..] are the call arguments.  @return process exit status. */
+ *  Text mode: argv[0] is the endpoint path, followed by call arguments.
+ *  JSON mode: argv holds request parameters only (path is separate).
+ *  @return process exit status. */
 static int cmd_call(const char *prog_name, const char *path,
+                    int json, const char *method,
                     int argc, char **argv)
 {
     char sock_path[FLUXIPC_PATH_MAX];
     snprintf(sock_path, sizeof(sock_path),
              "/run/user/%d/%s-fluxipc/%s.sock", getuid(), prog_name, prog_name);
 
-    char out[64 * 1024];
+    char   out[64 * 1024];
+    char  *json_out = NULL;
     size_t out_len = 0;
-    int rc = fluxipc_call(sock_path, path, argc, argv,
+    int rc;
+
+    if (json) {
+        rc = fluxipc_call_json(sock_path, path, method, argc, argv,
+                               &json_out, &out_len);
+        if (json_out && out_len > 0) print_json_doc(json_out, out_len);
+        free(json_out);
+    } else {
+        rc = fluxipc_call(sock_path, path, argc, argv,
                           out, sizeof(out), &out_len);
+        if (rc >= 0 && out_len > 0) {
+            fwrite(out, 1, out_len, stdout);
+            putchar('\n');
+        }
+    }
+
     if (rc < 0) {
         fprintf(stderr, "fluxipc error %d: %s\n", rc, strerror(-rc));
         return 1;
-    }
-    if (out_len > 0) {
-        fwrite(out, 1, out_len, stdout);
-        putchar('\n');
     }
     return 0;
 }
@@ -140,14 +178,41 @@ int main(int argc, char **argv)
         return fluxipc_interactive_init(prog);
     }
 
-    if (strcmp(cmd, "-c") == 0 || strcmp(cmd, "--call") == 0) {
-        if (argc < 4) {
-            fprintf(stderr, "fluxipc: --call requires <path>\n");
+    if (strcmp(cmd, "-c") == 0 || strcmp(cmd, "--call") == 0 ||
+        strcmp(cmd, "-j") == 0 || strcmp(cmd, "--json") == 0) {
+        int json = (strcmp(cmd, "-j") == 0 || strcmp(cmd, "--json") == 0);
+        int i = 3;
+        const char *method = NULL;
+
+        if (json && i < argc &&
+            (strcmp(argv[i], "-X") == 0 || strcmp(argv[i], "--method") == 0)) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "fluxipc: --method requires a value\n");
+                return 1;
+            }
+            method = argv[i + 1];
+            i += 2;
+        }
+        if (i >= argc) {
+            fprintf(stderr, "fluxipc: %s requires <path>\n",
+                    json ? "--json" : "--call");
             return 1;
         }
-        /* The IPC contract is argv[0] == endpoint path, so hand over the
-         * remaining argv starting at the path itself. */
-        return cmd_call(prog, argv[3], argc - 3, argv + 3);
+
+        const char *path = argv[i];
+        int paramc = argc - i - 1;
+        char **params = argv + i + 1;
+
+        /* A JSON body implies POST unless the caller chose a verb. */
+        if (json && !method && paramc == 1 &&
+            (params[0][0] == '{' || params[0][0] == '['))
+            method = "POST";
+
+        if (json)
+            return cmd_call(prog, path, 1, method, paramc, params);
+
+        /* Text IPC keeps the original contract: argv[0] == endpoint path. */
+        return cmd_call(prog, path, 0, NULL, argc - i, argv + i);
     }
 
     if (strcmp(cmd, "-h") == 0 || strcmp(cmd, "--help") == 0) {

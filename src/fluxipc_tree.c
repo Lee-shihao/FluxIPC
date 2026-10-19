@@ -31,69 +31,149 @@ static char *dup_or_null(const char *s)
     return s ? strdup(s) : NULL;
 }
 
-/** Free a node's owned memory (method strings first). */
+/* ─── Cached schema fields for positional CALL_JSON ─────────────────────── */
+
+static uint8_t schema_type_from_name(const char *s)
+{
+    if (!s) return FLUXIPC_SCHEMA_ANY;
+    if (strcmp(s, "string")  == 0) return FLUXIPC_SCHEMA_STRING;
+    if (strcmp(s, "integer") == 0) return FLUXIPC_SCHEMA_INTEGER;
+    if (strcmp(s, "number")  == 0) return FLUXIPC_SCHEMA_NUMBER;
+    if (strcmp(s, "boolean") == 0) return FLUXIPC_SCHEMA_BOOLEAN;
+    if (strcmp(s, "object")  == 0) return FLUXIPC_SCHEMA_OBJECT;
+    if (strcmp(s, "array")   == 0) return FLUXIPC_SCHEMA_ARRAY;
+    return FLUXIPC_SCHEMA_ANY;
+}
+
+static uint8_t schema_type_from_prop(const cJSON *prop)
+{
+    const cJSON *t = cJSON_GetObjectItemCaseSensitive(prop, "type");
+    return cJSON_IsString(t) ? schema_type_from_name(t->valuestring)
+                             : FLUXIPC_SCHEMA_ANY;
+}
+
+static uint8_t schema_item_type(const cJSON *prop)
+{
+    const cJSON *items = cJSON_GetObjectItemCaseSensitive(prop, "items");
+    return cJSON_IsObject(items) ? schema_type_from_prop(items)
+                                 : FLUXIPC_SCHEMA_ANY;
+}
+
+static void node_schema_fields_free(fluxipc_node_t *n)
+{
+    if (!n) return;
+    for (uint16_t i = 0; i < n->schema_field_count; i++)
+        free(n->schema_fields[i].name);
+    free(n->schema_fields);
+    n->schema_fields = NULL;
+    n->schema_field_count = 0;
+    n->schema_fields_built = 0;
+}
+
+/** Parse method.schema once, on the first positional CALL_JSON. */
+static void node_schema_fields_build(fluxipc_node_t *n)
+{
+    n->schema_fields_built = 1;
+    if (!n->method.schema) return;
+
+    cJSON *schema = cJSON_Parse(n->method.schema);
+    if (!schema) return;
+
+    cJSON *props = cJSON_GetObjectItemCaseSensitive(schema, "properties");
+    if (!cJSON_IsObject(props) || !props->child) {
+        cJSON_Delete(schema);
+        return;
+    }
+
+    size_t count = 0;
+    for (cJSON *p = props->child; p; p = p->next) count++;
+    if (count == 0 || count > UINT16_MAX) {
+        cJSON_Delete(schema);
+        return;
+    }
+
+    fluxipc_schema_field_t *fields = calloc(count, sizeof(*fields));
+    if (!fields) { cJSON_Delete(schema); return; }
+
+    size_t i = 0;
+    for (cJSON *p = props->child; p; p = p->next) {
+        if (!p->string) continue;
+        char *name = strdup(p->string);
+        if (!name) {
+            for (size_t j = 0; j < i; j++) free(fields[j].name);
+            free(fields);
+            cJSON_Delete(schema);
+            return;
+        }
+        fields[i].name      = name;
+        fields[i].type      = schema_type_from_prop(p);
+        fields[i].item_type = schema_item_type(p);
+        i++;
+    }
+
+    cJSON_Delete(schema);
+    if (i == 0) { free(fields); return; }
+
+    n->schema_fields       = fields;
+    n->schema_field_count  = (uint16_t)i;
+}
+
+const fluxipc_schema_field_t *tree_node_schema_fields(fluxipc_node_t *node,
+                                                      size_t *count)
+{
+    if (count) *count = 0;
+    if (!node || !node->is_leaf) return NULL;
+    if (!node->schema_fields_built) node_schema_fields_build(node);
+    if (count) *count = node->schema_field_count;
+    return node->schema_fields;
+}
+
+/** Free a node's owned memory (method strings + cached schema fields). */
 void tree_node_free(fluxipc_node_t *n)
 {
     if (!n) return;
+    node_schema_fields_free(n);
     free((char *)n->method.summary);
     free((char *)n->method.description);
     free((char *)n->method.schema);
     free(n);
 }
 
-/* ─── Path helpers ────────────────────────────────────────────────────────── */
-
-/**
- * Split an absolute path into components.
- * tokens[] points into a copy of path owned by the caller (free *copy_out).
- * Returns token count, or -1 on error.
- */
-static int path_split(const char *path, char **tokens, int max_tokens,
-                      char **copy_out)
-{
-    if (!path || path[0] != '/') return -1;
-
-    char *buf = strdup(path);
-    if (!buf) return -1;
-
-    int n = 0;
-    char *p = buf + 1; /* skip leading '/' */
-    while (*p && n < max_tokens) {
-        tokens[n++] = p;
-        char *slash = strchr(p, '/');
-        if (!slash) break;
-        *slash = '\0';
-        p = slash + 1;
-    }
-    *copy_out = buf;
-    return n;
-}
-
 /* ─── Lookup ──────────────────────────────────────────────────────────────── */
+
+static fluxipc_node_t *tree_find_child_n(fluxipc_node_t *parent,
+                                         const char *name, size_t len)
+{
+    if (!parent || !name || len >= FLUXIPC_NAME_MAX) return NULL;
+    for (fluxipc_node_t *c = parent->children; c; c = c->next_sibling)
+        if (c->name[len] == '\0' && memcmp(c->name, name, len) == 0)
+            return c;
+    return NULL;
+}
 
 fluxipc_node_t *tree_find_child(fluxipc_node_t *parent, const char *name)
 {
-    if (!parent || !name) return NULL;
-    for (fluxipc_node_t *c = parent->children; c; c = c->next_sibling)
-        if (strcmp(c->name, name) == 0) return c;
-    return NULL;
+    return name ? tree_find_child_n(parent, name, strlen(name)) : NULL;
 }
 
 fluxipc_node_t *tree_find_path(fluxipc_node_t *root, const char *path)
 {
     if (!root || !path || path[0] != '/') return NULL;
-    if (strcmp(path, "/") == 0) return root;
+    if (path[1] == '\0') return root;
 
-    char *tokens[64];
-    char *buf;
-    int   n = path_split(path, tokens, 64, &buf);
-    if (n < 0) return NULL;
-
+    /* Walk components in place: no path copy and no token array. */
     fluxipc_node_t *cur = root;
-    for (int i = 0; i < n && cur; i++)
-        cur = tree_find_child(cur, tokens[i]);
+    const char *p = path + 1;
+    while (*p && cur) {
+        while (*p == '/') p++;
+        if (!*p) break;
 
-    free(buf);
+        const char *slash = strchr(p, '/');
+        size_t len = slash ? (size_t)(slash - p) : strlen(p);
+        cur = tree_find_child_n(cur, p, len);
+        if (!cur || !slash) break;
+        p = slash + 1;
+    }
     return cur;
 }
 
@@ -139,7 +219,7 @@ fluxipc_node_t *tree_leaf(fluxipc_node_t *parent, const char *name,
                           const fluxipc_method_t *method)
 {
     if (!parent || !name || !name[0] || !method ||
-        (!method->ipc && !method->http))
+        (!method->ipc && !method->json))
         return NULL;
 
     if (tree_find_child(parent, name)) return NULL;   /* EEXIST */
@@ -148,7 +228,7 @@ fluxipc_node_t *tree_leaf(fluxipc_node_t *parent, const char *name,
     if (!n) return NULL;
 
     n->method.ipc         = method->ipc;
-    n->method.http        = method->http;
+    n->method.json        = method->json;
     n->method.data        = method->data;
     n->method.methods     = method->methods ? method->methods
                                             : FLUXIPC_M_DEFAULT;
@@ -166,20 +246,20 @@ fluxipc_node_t *tree_leaf(fluxipc_node_t *parent, const char *name,
 }
 
 /*
- * Merge @p src into an already-registered leaf.  This lets the IPC and HTTP
+ * Merge @p src into an already-registered leaf.  This lets the IPC and JSON
  * sides of one endpoint be registered independently (and in either order):
  * only fields that are still empty are filled, so the first registration of a
- * given handler/metadata value is the one that is kept.  The HTTP method mask
- * is owned by whichever call first attaches an HTTP handler.
+ * given handler/metadata value is the one that is kept.  The method mask is
+ * owned by whichever call first attaches a JSON handler.
  */
 void tree_leaf_merge(fluxipc_node_t *node, const fluxipc_method_t *src)
 {
     if (!node->method.ipc  && src->ipc)  node->method.ipc  = src->ipc;
 
-    int had_http = node->method.http != NULL;
-    if (!node->method.http && src->http) node->method.http = src->http;
-    if (src->http && src->methods && !had_http)
-        node->method.methods = src->methods;   /* the HTTP side owns the mask */
+    int had_json = node->method.json != NULL;
+    if (!node->method.json && src->json) node->method.json = src->json;
+    if (src->json && src->methods && !had_json)
+        node->method.methods = src->methods;   /* the JSON side owns the mask */
 
     if (!node->method.data && src->data) node->method.data = src->data;
 
@@ -187,8 +267,11 @@ void tree_leaf_merge(fluxipc_node_t *node, const fluxipc_method_t *src)
         node->method.summary     = dup_or_null(src->summary);
     if (!node->method.description && src->description)
         node->method.description = dup_or_null(src->description);
-    if (!node->method.schema      && src->schema)
-        node->method.schema      = dup_or_null(src->schema);
+    if (!node->method.schema      && src->schema) {
+        node->method.schema = dup_or_null(src->schema);
+        /* A schema added by a later merge invalidates any earlier cache. */
+        node_schema_fields_free(node);
+    }
 }
 
 /* ─── Destroy ─────────────────────────────────────────────────────────────── */

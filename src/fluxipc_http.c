@@ -53,7 +53,7 @@ static int buf_reserve(http_buf_t *b, size_t extra)
 {
     if (extra == 0) return 0;
     if (b->len + extra <= b->cap) return 0;
-    size_t ncap = b->cap ? b->cap : 512;
+    size_t ncap = b->cap ? b->cap : 2048;
     while (ncap < b->len + extra) {
         if (ncap > ((size_t)-1) / 2) { ncap = b->len + extra; break; }
         ncap *= 2;
@@ -110,6 +110,7 @@ static const char *status_reason(int code)
         case 409: return "Conflict";
         case 411: return "Length Required";
         case 413: return "Content Too Large";
+        case 414: return "URI Too Long";
         case 415: return "Unsupported Media Type";
         case 422: return "Unprocessable Content";
         case 431: return "Request Header Fields Too Large";
@@ -143,6 +144,26 @@ static void build_response(http_buf_t *b, int status, const char *content_type,
         buf_append(b, body, body_len);
 }
 
+/*
+ * Small-response scratch for cJSON_PrintPreallocated().  HTTP handling is
+ * single-threaded, so one static buffer is sufficient; large bodies fall back
+ * to the allocating printer.
+ */
+#define HTTP_JSON_SCRATCH 4096
+static char g_json_scratch[HTTP_JSON_SCRATCH];
+
+static const char *json_print(const cJSON *body, char **owned)
+{
+    *owned = NULL;
+    if (!body) return "";
+    if (cJSON_PrintPreallocated((cJSON *)body, g_json_scratch,
+                                (int)sizeof(g_json_scratch), 0))
+        return g_json_scratch;
+
+    *owned = cJSON_PrintUnformatted(body);
+    return *owned ? *owned : "";
+}
+
 static void send_problem(http_buf_t *b, int status, const char *title,
                          const char *detail, const char *instance,
                          int head_only, const char *extra)
@@ -155,22 +176,22 @@ static void send_problem(http_buf_t *b, int status, const char *title,
     if (detail)   cJSON_AddStringToObject(o, "detail", detail);
     if (instance) cJSON_AddStringToObject(o, "instance", instance);
 
-    char *s = cJSON_PrintUnformatted(o);
-    if (s) {
-        build_response(b, status, "application/problem+json; charset=utf-8",
-                       s, strlen(s), head_only, extra);
-        free(s);
-    }
+    char *owned = NULL;
+    const char *s = json_print(o, &owned);
+    build_response(b, status, "application/problem+json; charset=utf-8",
+                   s, strlen(s), head_only, extra);
+    free(owned);
     cJSON_Delete(o);
 }
 
 static void send_json(http_buf_t *b, int status, cJSON *body, int head_only,
                       const char *extra)
 {
-    char *s = body ? cJSON_PrintUnformatted(body) : NULL;
+    char *owned = NULL;
+    const char *s = json_print(body, &owned);
     build_response(b, status, "application/json; charset=utf-8",
-                   s ? s : "", s ? strlen(s) : 0, head_only, extra);
-    free(s);
+                   s, strlen(s), head_only, extra);
+    free(owned);
 }
 
 static int respond_problem(fluxipc_conn_t *c, int status, const char *title,
@@ -178,8 +199,7 @@ static int respond_problem(fluxipc_conn_t *c, int status, const char *title,
 {
     http_buf_t o = { 0 };
     send_problem(&o, status, title, detail, instance, 0, NULL);
-    int r = conn_respond(c, o.p, o.len);
-    free(o.p);
+    int r = conn_respond_own(c, o.p, o.len);
     return r < 0 ? -1 : 1;
 }
 
@@ -308,14 +328,19 @@ static void route_request(fluxipc_ctx_t *ctx, http_buf_t *out,
     size_t path_len = qmark ? (size_t)(qmark - target) : strlen(target);
     const char *qraw = qmark ? qmark + 1 : NULL;
     size_t qlen = qraw ? strlen(qraw) : 0;
-
-    char raw_path[2048];
-    if (path_len >= sizeof(raw_path)) path_len = sizeof(raw_path) - 1;
-    memcpy(raw_path, target, path_len);
-    raw_path[path_len] = '\0';
+    if (qraw && memmem(qraw, qlen, "%00", 3) != NULL) {
+        send_problem(out, 400, "Bad Request", "NUL byte in query", NULL,
+                     head_only, NULL);
+        return;
+    }
 
     char path[2048];
-    fluxipc_url_decode(raw_path, path_len, path, sizeof(path));
+    size_t decoded = fluxipc_url_decode(target, path_len, path, sizeof(path));
+    if (memchr(path, '\0', decoded) != NULL) {
+        send_problem(out, 400, "Bad Request", "NUL byte in path", NULL,
+                     head_only, NULL);
+        return;
+    }
 
     size_t pl = strlen(path);
     while (pl > 1 && path[pl - 1] == '/') path[--pl] = '\0';
@@ -386,17 +411,16 @@ static void route_request(fluxipc_ctx_t *ctx, http_buf_t *out,
     }
 
     /* leaf */
-    char allow[128];
-    build_allow(node->method.methods, 1, allow, sizeof(allow));
-
     if (strcmp(method, "OPTIONS") == 0) {
-        char extra[160];
+        char allow[128], extra[160];
+        build_allow(node->method.methods, 1, allow, sizeof(allow));
         snprintf(extra, sizeof(extra), "Allow: %s\r\n", allow);
         build_response(out, 204, "application/json", NULL, 0, 1, extra);
         return;
     }
     if (want == 0 || !(node->method.methods & want)) {
-        char extra[160];
+        char allow[128], extra[160];
+        build_allow(node->method.methods, 1, allow, sizeof(allow));
         snprintf(extra, sizeof(extra), "Allow: %s\r\n", allow);
         send_problem(out, 405, "Method Not Allowed",
                      "method not allowed for this endpoint", path, head_only,
@@ -428,8 +452,9 @@ static void route_request(fluxipc_ctx_t *ctx, http_buf_t *out,
     int qn = fluxipc_parse_query(qraw, qlen, qkv, HTTP_MAX_QUERY,
                          qarena, sizeof(qarena));
 
-    fluxipc_http_request_t rq = {
+    fluxipc_json_request_t rq = {
         .method       = effective_method,
+        .verb         = want,
         .path         = path,
         .node         = node,
         .query        = qkv,
@@ -442,7 +467,7 @@ static void route_request(fluxipc_ctx_t *ctx, http_buf_t *out,
         .json         = json,
         .data         = node->method.data,
     };
-    fluxipc_http_response_t rs = { 0 };
+    fluxipc_json_response_t rs = { 0 };
 
     int rc = fluxipc_dispatch_http(ctx, &rq, &rs);
 
@@ -471,24 +496,71 @@ static void route_request(fluxipc_ctx_t *ctx, http_buf_t *out,
 
 /* ── request parsing ────────────────────────────────────────────────────── */
 
+static int parse_request_line(char *line, char *method, size_t mcap,
+                              char *target, size_t tcap)
+{
+    char *p = line;
+    while (*p == ' ' || *p == '\t') p++;
+
+    char *m = p;
+    while (*p && *p != ' ' && *p != '\t') p++;
+    if (p == m) return -1;
+    size_t mlen = (size_t)(p - m);
+    if (mlen >= mcap) return -1;
+    memcpy(method, m, mlen);
+    method[mlen] = '\0';
+
+    while (*p == ' ' || *p == '\t') p++;
+    char *t = p;
+    while (*p && *p != ' ' && *p != '\t') p++;
+    if (p == t) return -1;
+    size_t tlen = (size_t)(p - t);
+    if (tlen >= tcap) return -2;
+    memcpy(target, t, tlen);
+    target[tlen] = '\0';
+
+    while (*p == ' ' || *p == '\t') p++;
+    if (strncmp(p, "HTTP/1.", 7) != 0) return -1;
+    return 0;
+}
+
 int http_conn_process(fluxipc_ctx_t *ctx, fluxipc_conn_t *c)
 {
-    char *he = memmem(c->rbuf, c->rlen, "\r\n\r\n", 4);
-    if (!he) {
-        if (c->rlen > HTTP_HDR_MAX)
+    /*
+     * Parse the header boundary and Content-Length once.  Without this cache
+     * every partial body read would rescan the whole accumulated buffer.
+     * hdr_end == 0 is safe as "not parsed yet": a valid request line is never
+     * empty.
+     */
+    if (c->hdr_end == 0) {
+        char *he = memmem(c->rbuf, c->rlen, "\r\n\r\n", 4);
+        if (!he) {
+            if (c->rlen > HTTP_HDR_MAX)
+                return respond_problem(c, 431, "Request Header Fields Too Large",
+                                       "header section exceeds limit", NULL);
+            return 0;
+        }
+        size_t hbytes = (size_t)(he - c->rbuf);
+        if (hbytes > HTTP_HDR_MAX)
             return respond_problem(c, 431, "Request Header Fields Too Large",
                                    "header section exceeds limit", NULL);
-        return 0;
+
+        size_t content_length = 0;
+        int cl = fluxipc_find_content_length(c->rbuf, hbytes, &content_length);
+        if (cl < 0)
+            return respond_problem(c, 400, "Bad Request",
+                                   "invalid Content-Length", NULL);
+        if (content_length > HTTP_BODY_MAX)
+            return respond_problem(c, 413, "Content Too Large",
+                                   "request body exceeds limit", NULL);
+
+        c->hdr_end  = hbytes;
+        c->body_len = content_length;
     }
-    size_t hbytes = (size_t)(he - c->rbuf);
 
-    size_t content_length = fluxipc_find_content_length(c->rbuf, hbytes);
-    if (content_length > HTTP_BODY_MAX)
-        return respond_problem(c, 413, "Content Too Large",
-                               "request body exceeds limit", NULL);
-
-    c->hdr_end  = hbytes;
-    c->body_len = content_length;
+    size_t hbytes = c->hdr_end;
+    size_t content_length = c->body_len;
+    char  *he = c->rbuf + hbytes;
     size_t body_off = hbytes + 4;
     if (c->rlen < body_off + content_length)
         return 0;   /* wait for the rest of the body */
@@ -502,7 +574,12 @@ int http_conn_process(fluxipc_ctx_t *ctx, fluxipc_conn_t *c)
 
     char method[16] = {0};
     char target[2048] = {0};
-    if (sscanf(c->rbuf, "%15s %2047s", method, target) != 2)
+    int pl = parse_request_line(c->rbuf, method, sizeof(method),
+                                target, sizeof(target));
+    if (pl == -2)
+        return respond_problem(c, 414, "URI Too Long",
+                               "request target exceeds limit", NULL);
+    if (pl < 0)
         return respond_problem(c, 400, "Bad Request",
                                "malformed request line", NULL);
 
@@ -543,8 +620,7 @@ int http_conn_process(fluxipc_ctx_t *ctx, fluxipc_conn_t *c)
     http_buf_t out = { 0 };
     route_request(ctx, &out, method, target, headers, header_count,
                   content_type, body, content_length);
-    int r = conn_respond(c, out.p, out.len);
-    free(out.p);
+    int r = conn_respond_own(c, out.p, out.len);
     return r < 0 ? -1 : 1;
 }
 

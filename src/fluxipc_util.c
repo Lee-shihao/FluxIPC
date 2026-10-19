@@ -6,7 +6,10 @@
 
 #include "fluxipc_internal.h"
 
+#include <errno.h>
+#include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 static int hexval(int c)
 {
@@ -80,14 +83,18 @@ int fluxipc_parse_query(const char *raw, size_t rawlen,
 
 /**
  * Locate Content-Length inside a request header block without mutating it.
- * @p hbytes is the offset of the terminating CRLFCRLF.
+ * @return 0 if absent, 1 if valid (and *out set), -1 if malformed/duplicate.
  */
-size_t fluxipc_find_content_length(const char *buf, size_t hbytes)
+int fluxipc_find_content_length(const char *buf, size_t hbytes, size_t *out)
 {
+    if (out) *out = 0;
     const char *end = buf + hbytes;
     const char *line = memmem(buf, hbytes, "\r\n", 2);
     if (!line) return 0;
     line += 2;
+
+    int    found = 0;
+    size_t value = 0;
 
     while (line < end) {
         const char *eol = memmem(line, (size_t)(end - line) + 2, "\r\n", 2);
@@ -96,15 +103,167 @@ size_t fluxipc_find_content_length(const char *buf, size_t hbytes)
         if (colon) {
             size_t klen = (size_t)(colon - line);
             if (klen == 14 && strncasecmp(line, "Content-Length", 14) == 0) {
+                if (found) return -1;            /* duplicate */
+
                 const char *v = colon + 1;
                 while (v < eol && (*v == ' ' || *v == '\t')) v++;
-                size_t val = 0;
-                for (; v < eol && *v >= '0' && *v <= '9'; v++)
-                    val = val * 10 + (size_t)(*v - '0');
-                return val;
+                if (v == eol) return -1;         /* empty value */
+
+                size_t n = 0;
+                for (; v < eol && *v >= '0' && *v <= '9'; v++) {
+                    size_t d = (size_t)(*v - '0');
+                    if (n > ((size_t)-1 - d) / 10) return -1;  /* overflow */
+                    n = n * 10 + d;
+                }
+                while (v < eol && (*v == ' ' || *v == '\t')) v++;
+                if (v != eol) return -1;         /* trailing junk */
+
+                found = 1;
+                value = n;
             }
         }
         line = eol + 2;
     }
-    return 0;
+
+    if (!found) return 0;
+    if (out) *out = value;
+    return 1;
+}
+
+/* ─── Structured request helpers ──────────────────────────────────────────── */
+
+static const cJSON *json_field(const fluxipc_json_request_t *req,
+                               const char *key)
+{
+    if (!req || !key || !req->json) return NULL;
+    return cJSON_GetObjectItemCaseSensitive(req->json, key);
+}
+
+static const char *query_field(const fluxipc_json_request_t *req,
+                               const char *key)
+{
+    if (!req || !key) return NULL;
+    for (size_t i = 0; i < req->query_count; i++)
+        if (req->query[i].key && strcmp(req->query[i].key, key) == 0)
+            return req->query[i].value;
+    return NULL;
+}
+
+static int bool_from_string(const char *s, int def)
+{
+    if (!s) return def;
+    if (strcasecmp(s, "true")  == 0 || strcasecmp(s, "yes") == 0 ||
+        strcasecmp(s, "on")    == 0 || strcmp(s, "1") == 0)
+        return 1;
+    if (strcasecmp(s, "false") == 0 || strcasecmp(s, "no") == 0 ||
+        strcasecmp(s, "off")   == 0 || strcmp(s, "0") == 0)
+        return 0;
+    return def;
+}
+
+const char *fluxipc_json_str(const fluxipc_json_request_t *req,
+                             const char *key, const char *def)
+{
+    const cJSON *v = json_field(req, key);
+    if (cJSON_IsString(v) && v->valuestring) return v->valuestring;
+
+    const char *q = query_field(req, key);
+    return q ? q : def;
+}
+
+long fluxipc_json_int(const fluxipc_json_request_t *req,
+                      const char *key, long def)
+{
+    const cJSON *v = json_field(req, key);
+    if (cJSON_IsNumber(v)) return (long)v->valuedouble;
+    if (cJSON_IsString(v) && v->valuestring)
+        return strtol(v->valuestring, NULL, 10);
+    if (cJSON_IsBool(v)) return cJSON_IsTrue(v) ? 1 : 0;
+
+    const char *q = query_field(req, key);
+    return q ? strtol(q, NULL, 10) : def;
+}
+
+double fluxipc_json_double(const fluxipc_json_request_t *req,
+                           const char *key, double def)
+{
+    const cJSON *v = json_field(req, key);
+    if (cJSON_IsNumber(v)) return v->valuedouble;
+    if (cJSON_IsString(v) && v->valuestring)
+        return strtod(v->valuestring, NULL);
+
+    const char *q = query_field(req, key);
+    return q ? strtod(q, NULL) : def;
+}
+
+int fluxipc_json_bool(const fluxipc_json_request_t *req,
+                      const char *key, int def)
+{
+    const cJSON *v = json_field(req, key);
+    if (cJSON_IsBool(v)) return cJSON_IsTrue(v) ? 1 : 0;
+    if (cJSON_IsNumber(v)) return v->valuedouble != 0;
+    if (cJSON_IsString(v) && v->valuestring)
+        return bool_from_string(v->valuestring, def);
+
+    const char *q = query_field(req, key);
+    return q ? bool_from_string(q, def) : def;
+}
+
+int fluxipc_json_has(const fluxipc_json_request_t *req, const char *key)
+{
+    return json_field(req, key) != NULL || query_field(req, key) != NULL;
+}
+
+/* ─── Structured error response ───────────────────────────────────────────── */
+
+static int status_from_code(int code)
+{
+    if (code > 0) return code;
+
+    switch (-code) {
+        case EINVAL:  return 400;
+        case EACCES:
+        case EPERM:   return 403;
+        case ENOENT:  return 404;
+        case EEXIST:
+        case EBUSY:
+        case EAGAIN:  return 409;
+        case ERANGE:
+        case E2BIG:   return 422;
+        case ENOSYS:  return 501;
+        default:      return 500;
+    }
+}
+
+static int errno_from_status(int status)
+{
+    switch (status) {
+        case 400: return -EINVAL;
+        case 403: return -EACCES;
+        case 404: return -ENOENT;
+        case 409: return -EBUSY;
+        case 413: return -EMSGSIZE;
+        case 422: return -ERANGE;
+        case 431: return -E2BIG;
+        case 501: return -ENOSYS;
+        default:  return -EIO;
+    }
+}
+
+int fluxipc_json_error(fluxipc_json_response_t *resp, int code,
+                       const char *msg)
+{
+    if (!resp) return -EINVAL;
+
+    cJSON *o = cJSON_CreateObject();
+    if (!o) return -ENOMEM;
+
+    cJSON_AddStringToObject(o, "error", msg ? msg : "error");
+    cJSON_AddNumberToObject(o, "code", code);
+
+    cJSON_Delete(resp->json);
+    resp->json   = o;
+    resp->status = status_from_code(code);
+
+    return code < 0 ? code : errno_from_status(resp->status);
 }

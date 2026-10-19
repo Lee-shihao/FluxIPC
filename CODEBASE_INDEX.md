@@ -27,12 +27,10 @@
 - `fluxipc_tree.c`
 
 **tests/**
-- `example_server.c`
-- `unit/` — fluxipc-ut
-- `integration/` — fluxipc-it
-
-**tests/**
-- `example_server.c`
+- `example_server.c` — demo/dual IPC + JSON server
+- `unit/` — cmocka suites (`fluxipc-ut`)
+- `integration/main.c` — end-to-end IPC/JSON/HTTP + robustness (`fluxipc-it`)
+- `bench/bench.c` — latency/throughput/RSS baseline (`fluxipc-bench`)
 
 ## Config
 - `.claude/settings.json`

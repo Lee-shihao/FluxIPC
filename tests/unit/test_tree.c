@@ -210,22 +210,22 @@ static void test_find_child_and_path(void **state)
     tree_destroy(root);
 }
 
-static void test_deep_path_token_cap(void **state)
+static void test_deep_path_walk(void **state)
 {
     (void)state;
-    /* Build a 70-level chain; tree_find_path only walks 64 components. */
+    /* Build a 70-level chain; tree_find_path walks every component. */
     fluxipc_node_t *root = make_root();
     fluxipc_node_t *cur  = root;
+    static const char digits[] = "0123456789abcdefghijklmnopqrstuvwxyz";
     for (int i = 0; i < 70; i++) {
-        char nm[16];
-        snprintf(nm, sizeof(nm), "n%d", i);
+        char nm[3] = { digits[i / 36], digits[i % 36], '\0' };
         cur = tree_mkdir(cur, nm);
         assert_non_null(cur);
     }
-    /* full path exists all the way down */
+    /* full path exists all the way down (70 components > old 64 token cap) */
     const char *full = cur->full_path;
     fluxipc_node_t *hit = tree_find_path(root, full);
-    assert_non_null(hit);            /* capped at 64 components, still a node */
+    assert_ptr_equal(hit, cur);
     tree_destroy(root);
 }
 
@@ -234,6 +234,74 @@ static void test_destroy_handles_null(void **state)
     (void)state;
     tree_destroy(NULL);              /* must not crash */
     fluxipc_node_t *root = make_root();
+    tree_destroy(root);
+}
+
+/* ── cached schema fields for positional CALL_JSON ───────────────────────── */
+
+static void test_schema_field_cache(void **state)
+{
+    (void)state;
+    fluxipc_node_t *root = make_root();
+
+    fluxipc_method_t m = {
+        .ipc = dummy_ipc,
+        .schema = FLUXIPC_SCHEMA(
+            FLUXIPC_PROP_INT("a") "," FLUXIPC_PROP_ARRAY("b", "string")),
+    };
+    fluxipc_node_t *n = tree_leaf(root, "schema", &m);
+    assert_non_null(n);
+
+    size_t count = 0;
+    const fluxipc_schema_field_t *f = tree_node_schema_fields(n, &count);
+    assert_non_null(f);
+    assert_int_equal(count, 2);
+    assert_string_equal(f[0].name, "a");
+    assert_int_equal(f[0].type, FLUXIPC_SCHEMA_INTEGER);
+    assert_string_equal(f[1].name, "b");
+    assert_int_equal(f[1].type, FLUXIPC_SCHEMA_ARRAY);
+    assert_int_equal(f[1].item_type, FLUXIPC_SCHEMA_STRING);
+
+    /* The parsed field list is cached. */
+    size_t count2 = 0;
+    assert_ptr_equal(tree_node_schema_fields(n, &count2), f);
+    assert_int_equal(count2, 2);
+
+    tree_destroy(root);
+}
+
+static void test_schema_field_cache_merge_and_invalid(void **state)
+{
+    (void)state;
+    fluxipc_node_t *root = make_root();
+
+    fluxipc_method_t ipc_only = { .ipc = dummy_ipc };
+    fluxipc_node_t *n = tree_leaf(root, "m", &ipc_only);
+    assert_non_null(n);
+
+    size_t count = 99;
+    assert_null(tree_node_schema_fields(n, &count));
+    assert_int_equal(count, 0);
+
+    /* A later registration can add the schema; the empty cache is rebuilt. */
+    fluxipc_method_t with_schema = {
+        .schema = FLUXIPC_SCHEMA(FLUXIPC_PROP_STR("name")),
+    };
+    tree_leaf_merge(n, &with_schema);
+    const fluxipc_schema_field_t *f = tree_node_schema_fields(n, &count);
+    assert_non_null(f);
+    assert_int_equal(count, 1);
+    assert_string_equal(f[0].name, "name");
+    assert_int_equal(f[0].type, FLUXIPC_SCHEMA_STRING);
+
+    /* Invalid schema => no fields, but the failure is cached too. */
+    fluxipc_method_t bad = { .ipc = dummy_ipc, .schema = "not-json" };
+    fluxipc_node_t *b = tree_leaf(root, "bad", &bad);
+    assert_non_null(b);
+    count = 99;
+    assert_null(tree_node_schema_fields(b, &count));
+    assert_int_equal(count, 0);
+
     tree_destroy(root);
 }
 
@@ -249,8 +317,10 @@ int ut_tree(void)
         cmocka_unit_test(test_leaf_default_methods),
         cmocka_unit_test(test_leaf_existing_name_fails),
         cmocka_unit_test(test_find_child_and_path),
-        cmocka_unit_test(test_deep_path_token_cap),
+        cmocka_unit_test(test_deep_path_walk),
         cmocka_unit_test(test_destroy_handles_null),
+        cmocka_unit_test(test_schema_field_cache),
+        cmocka_unit_test(test_schema_field_cache_merge_and_invalid),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }
