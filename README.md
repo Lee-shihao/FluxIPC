@@ -499,8 +499,8 @@ COV_LINE_MIN=90  COV_BRANCH_MIN=78  MUT_SCORE_MIN=70  MUT_WORKERS=4
 
 | Gate | Target | Actual |
 |------|--------|--------|
-| Line coverage (`src/`) | ≥ 90% | **95.0%** |
-| Branch coverage (`src/`) | ≥ 78% | **78.0%** |
+| Line coverage (`src/`) | ≥ 90% | **95.7%** |
+| Branch coverage (`src/`) | ≥ 78% | **78.7%** |
 | Mutation score | > 70% | **78%** |
 | ASan + UBSan (unit) | clean | clean |
 | ASan + UBSan + LSan (integration) | clean | clean |
