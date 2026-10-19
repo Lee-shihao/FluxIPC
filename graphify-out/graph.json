@@ -447,10 +447,20 @@
       "norm_label": "fluxipc_conn.c"
     },
     {
+      "label": "now_ms()",
+      "file_type": "code",
+      "source_file": "src/fluxipc_conn.c",
+      "source_location": "L33",
+      "_origin": "ast",
+      "id": "src_fluxipc_conn_now_ms",
+      "community": 8,
+      "norm_label": "now_ms()"
+    },
+    {
       "label": "conn_close()",
       "file_type": "code",
       "source_file": "src/fluxipc_conn.c",
-      "source_location": "L34",
+      "source_location": "L42",
       "_origin": "ast",
       "id": "src_fluxipc_conn_conn_close",
       "community": 8,
@@ -460,7 +470,7 @@
       "label": "fluxipc_conn_t",
       "file_type": "code",
       "source_file": "src/fluxipc_conn.c",
-      "source_location": "L34",
+      "source_location": "L42",
       "_origin": "ast",
       "id": "src_fluxipc_conn_c_fluxipc_conn_t",
       "community": 8,
@@ -470,7 +480,7 @@
       "label": "conn_pool_init()",
       "file_type": "code",
       "source_file": "src/fluxipc_conn.c",
-      "source_location": "L47",
+      "source_location": "L56",
       "_origin": "ast",
       "id": "src_fluxipc_conn_conn_pool_init",
       "community": 8,
@@ -480,7 +490,7 @@
       "label": "conn_pool_reset()",
       "file_type": "code",
       "source_file": "src/fluxipc_conn.c",
-      "source_location": "L55",
+      "source_location": "L64",
       "_origin": "ast",
       "id": "src_fluxipc_conn_conn_pool_reset",
       "community": 8,
@@ -490,7 +500,7 @@
       "label": "conn_pool_free_count()",
       "file_type": "code",
       "source_file": "src/fluxipc_conn.c",
-      "source_location": "L61",
+      "source_location": "L70",
       "_origin": "ast",
       "id": "src_fluxipc_conn_conn_pool_free_count",
       "community": 8,
@@ -500,7 +510,7 @@
       "label": "conn_alloc()",
       "file_type": "code",
       "source_file": "src/fluxipc_conn.c",
-      "source_location": "L69",
+      "source_location": "L78",
       "_origin": "ast",
       "id": "src_fluxipc_conn_conn_alloc",
       "community": 8,
@@ -510,7 +520,7 @@
       "label": "fluxipc_conn_kind_t",
       "file_type": "code",
       "source_file": "src/fluxipc_conn.c",
-      "source_location": "L69",
+      "source_location": "L78",
       "_origin": "ast",
       "id": "src_fluxipc_conn_c_fluxipc_conn_kind_t",
       "community": 8,
@@ -520,7 +530,7 @@
       "label": "conn_respond()",
       "file_type": "code",
       "source_file": "src/fluxipc_conn.c",
-      "source_location": "L86",
+      "source_location": "L96",
       "_origin": "ast",
       "id": "src_fluxipc_conn_conn_respond",
       "community": 8,
@@ -530,7 +540,7 @@
       "label": "conn_respond_own()",
       "file_type": "code",
       "source_file": "src/fluxipc_conn.c",
-      "source_location": "L103",
+      "source_location": "L113",
       "_origin": "ast",
       "id": "src_fluxipc_conn_conn_respond_own",
       "community": 8,
@@ -540,7 +550,7 @@
       "label": "accept_unix()",
       "file_type": "code",
       "source_file": "src/fluxipc_conn.c",
-      "source_location": "L117",
+      "source_location": "L127",
       "_origin": "ast",
       "id": "src_fluxipc_conn_accept_unix",
       "community": 8,
@@ -550,7 +560,7 @@
       "label": "fluxipc_ctx_t",
       "file_type": "code",
       "source_file": "src/fluxipc_conn.c",
-      "source_location": "L117",
+      "source_location": "L127",
       "_origin": "ast",
       "id": "src_fluxipc_conn_c_fluxipc_ctx_t",
       "community": 8,
@@ -560,7 +570,7 @@
       "label": "accept_http()",
       "file_type": "code",
       "source_file": "src/fluxipc_conn.c",
-      "source_location": "L129",
+      "source_location": "L139",
       "_origin": "ast",
       "id": "src_fluxipc_conn_accept_http",
       "community": 8,
@@ -570,7 +580,7 @@
       "label": "conn_write()",
       "file_type": "code",
       "source_file": "src/fluxipc_conn.c",
-      "source_location": "L145",
+      "source_location": "L155",
       "_origin": "ast",
       "id": "src_fluxipc_conn_conn_write",
       "community": 8,
@@ -580,17 +590,37 @@
       "label": "conn_read()",
       "file_type": "code",
       "source_file": "src/fluxipc_conn.c",
-      "source_location": "L159",
+      "source_location": "L173",
       "_origin": "ast",
       "id": "src_fluxipc_conn_conn_read",
       "community": 8,
       "norm_label": "conn_read()"
     },
     {
+      "label": "conn_idle_wait_ms()",
+      "file_type": "code",
+      "source_file": "src/fluxipc_conn.c",
+      "source_location": "L210",
+      "_origin": "ast",
+      "id": "src_fluxipc_conn_conn_idle_wait_ms",
+      "community": 8,
+      "norm_label": "conn_idle_wait_ms()"
+    },
+    {
+      "label": "conn_sweep_idle()",
+      "file_type": "code",
+      "source_file": "src/fluxipc_conn.c",
+      "source_location": "L228",
+      "_origin": "ast",
+      "id": "src_fluxipc_conn_conn_sweep_idle",
+      "community": 8,
+      "norm_label": "conn_sweep_idle()"
+    },
+    {
       "label": "conn_poll()",
       "file_type": "code",
       "source_file": "src/fluxipc_conn.c",
-      "source_location": "L192",
+      "source_location": "L241",
       "_origin": "ast",
       "id": "src_fluxipc_conn_conn_poll",
       "community": 8,
@@ -600,7 +630,7 @@
       "label": "fluxipc_ut_conn()",
       "file_type": "code",
       "source_file": "src/fluxipc_conn.c",
-      "source_location": "L255",
+      "source_location": "L317",
       "_origin": "ast",
       "id": "src_fluxipc_conn_fluxipc_ut_conn",
       "community": 8,
@@ -610,7 +640,7 @@
       "label": "fluxipc_ut_conn_alloc()",
       "file_type": "code",
       "source_file": "src/fluxipc_conn.c",
-      "source_location": "L261",
+      "source_location": "L323",
       "_origin": "ast",
       "id": "src_fluxipc_conn_fluxipc_ut_conn_alloc",
       "community": 8,
@@ -620,7 +650,7 @@
       "label": "fluxipc_ut_conn_read()",
       "file_type": "code",
       "source_file": "src/fluxipc_conn.c",
-      "source_location": "L267",
+      "source_location": "L329",
       "_origin": "ast",
       "id": "src_fluxipc_conn_fluxipc_ut_conn_read",
       "community": 8,
@@ -630,7 +660,7 @@
       "label": "fluxipc_ut_conn_write()",
       "file_type": "code",
       "source_file": "src/fluxipc_conn.c",
-      "source_location": "L272",
+      "source_location": "L334",
       "_origin": "ast",
       "id": "src_fluxipc_conn_fluxipc_ut_conn_write",
       "community": 8,
@@ -640,7 +670,7 @@
       "label": "fluxipc_ut_pool_size()",
       "file_type": "code",
       "source_file": "src/fluxipc_conn.c",
-      "source_location": "L277",
+      "source_location": "L339",
       "_origin": "ast",
       "id": "src_fluxipc_conn_fluxipc_ut_pool_size",
       "community": 8,
@@ -703,7 +733,7 @@
       "source_location": "L77",
       "_origin": "ast",
       "id": "src_fluxipc_core_fluxipc_server_init",
-      "community": 0,
+      "community": 20,
       "norm_label": "fluxipc_server_init()"
     },
     {
@@ -743,7 +773,7 @@
       "source_location": "L135",
       "_origin": "ast",
       "id": "src_fluxipc_core_fluxipc_node_mkdir",
-      "community": 0,
+      "community": 17,
       "norm_label": "fluxipc_node_mkdir()"
     },
     {
@@ -963,7 +993,7 @@
       "source_location": "L435",
       "_origin": "ast",
       "id": "src_fluxipc_core_fluxipc_build_manifest",
-      "community": 0,
+      "community": 17,
       "norm_label": "fluxipc_build_manifest()"
     },
     {
@@ -1023,7 +1053,7 @@
       "source_location": "L475",
       "_origin": "ast",
       "id": "src_fluxipc_core_fluxipc_dispatch_ipc",
-      "community": 0,
+      "community": 17,
       "norm_label": "fluxipc_dispatch_ipc()"
     },
     {
@@ -1153,7 +1183,7 @@
       "source_location": "L716",
       "_origin": "ast",
       "id": "src_fluxipc_core_fluxipc_set_request_hooks",
-      "community": 0,
+      "community": 20,
       "norm_label": "fluxipc_set_request_hooks()"
     },
     {
@@ -1163,7 +1193,7 @@
       "source_location": "L716",
       "_origin": "ast",
       "id": "fluxipc_request_hook_fn",
-      "community": 0,
+      "community": 20,
       "norm_label": "fluxipc_request_hook_fn"
     },
     {
@@ -1193,7 +1223,7 @@
       "source_location": "L745",
       "_origin": "ast",
       "id": "src_fluxipc_core_fluxipc_destroy",
-      "community": 8,
+      "community": 20,
       "norm_label": "fluxipc_destroy()"
     },
     {
@@ -1310,7 +1340,7 @@
       "label": "build_response()",
       "file_type": "code",
       "source_file": "src/fluxipc_http.c",
-      "source_location": "L125",
+      "source_location": "L126",
       "_origin": "ast",
       "id": "src_fluxipc_http_build_response",
       "community": 10,
@@ -1320,7 +1350,7 @@
       "label": "json_print()",
       "file_type": "code",
       "source_file": "src/fluxipc_http.c",
-      "source_location": "L154",
+      "source_location": "L155",
       "_origin": "ast",
       "id": "src_fluxipc_http_json_print",
       "community": 10,
@@ -1330,7 +1360,7 @@
       "label": "cJSON",
       "file_type": "code",
       "source_file": "src/fluxipc_http.c",
-      "source_location": "L154",
+      "source_location": "L155",
       "_origin": "ast",
       "id": "src_fluxipc_http_c_cjson",
       "community": 10,
@@ -1340,7 +1370,7 @@
       "label": "send_problem()",
       "file_type": "code",
       "source_file": "src/fluxipc_http.c",
-      "source_location": "L166",
+      "source_location": "L167",
       "_origin": "ast",
       "id": "src_fluxipc_http_send_problem",
       "community": 10,
@@ -1350,7 +1380,7 @@
       "label": "send_json()",
       "file_type": "code",
       "source_file": "src/fluxipc_http.c",
-      "source_location": "L186",
+      "source_location": "L187",
       "_origin": "ast",
       "id": "src_fluxipc_http_send_json",
       "community": 10,
@@ -1360,27 +1390,27 @@
       "label": "respond_problem()",
       "file_type": "code",
       "source_file": "src/fluxipc_http.c",
-      "source_location": "L196",
+      "source_location": "L197",
       "_origin": "ast",
       "id": "src_fluxipc_http_respond_problem",
-      "community": 8,
+      "community": 10,
       "norm_label": "respond_problem()"
     },
     {
       "label": "fluxipc_conn_t",
       "file_type": "code",
       "source_file": "src/fluxipc_http.c",
-      "source_location": "L196",
+      "source_location": "L197",
       "_origin": "ast",
       "id": "src_fluxipc_http_c_fluxipc_conn_t",
-      "community": 8,
+      "community": 10,
       "norm_label": "fluxipc_conn_t"
     },
     {
       "label": "build_allow()",
       "file_type": "code",
       "source_file": "src/fluxipc_http.c",
-      "source_location": "L207",
+      "source_location": "L208",
       "_origin": "ast",
       "id": "src_fluxipc_http_build_allow",
       "community": 10,
@@ -1390,7 +1420,7 @@
       "label": "add_operation()",
       "file_type": "code",
       "source_file": "src/fluxipc_http.c",
-      "source_location": "L240",
+      "source_location": "L241",
       "_origin": "ast",
       "id": "src_fluxipc_http_add_operation",
       "community": 10,
@@ -1400,7 +1430,7 @@
       "label": "fluxipc_node_t",
       "file_type": "code",
       "source_file": "src/fluxipc_http.c",
-      "source_location": "L240",
+      "source_location": "L241",
       "_origin": "ast",
       "id": "src_fluxipc_http_c_fluxipc_node_t",
       "community": 10,
@@ -1410,7 +1440,7 @@
       "label": "openapi_leaf_cb()",
       "file_type": "code",
       "source_file": "src/fluxipc_http.c",
-      "source_location": "L275",
+      "source_location": "L276",
       "_origin": "ast",
       "id": "src_fluxipc_http_openapi_leaf_cb",
       "community": 10,
@@ -1420,7 +1450,7 @@
       "label": "build_openapi()",
       "file_type": "code",
       "source_file": "src/fluxipc_http.c",
-      "source_location": "L295",
+      "source_location": "L296",
       "_origin": "ast",
       "id": "src_fluxipc_http_build_openapi",
       "community": 10,
@@ -1430,7 +1460,7 @@
       "label": "route_request()",
       "file_type": "code",
       "source_file": "src/fluxipc_http.c",
-      "source_location": "L317",
+      "source_location": "L318",
       "_origin": "ast",
       "id": "src_fluxipc_http_route_request",
       "community": 10,
@@ -1440,7 +1470,7 @@
       "label": "fluxipc_ctx_t",
       "file_type": "code",
       "source_file": "src/fluxipc_http.c",
-      "source_location": "L317",
+      "source_location": "L318",
       "_origin": "ast",
       "id": "src_fluxipc_http_c_fluxipc_ctx_t",
       "community": 10,
@@ -1450,27 +1480,37 @@
       "label": "fluxipc_kv_t",
       "file_type": "code",
       "source_file": "src/fluxipc_http.c",
-      "source_location": "L317",
+      "source_location": "L318",
       "_origin": "ast",
       "id": "src_fluxipc_http_c_fluxipc_kv_t",
       "community": 10,
       "norm_label": "fluxipc_kv_t"
     },
     {
+      "label": "parse_request_line()",
+      "file_type": "code",
+      "source_file": "src/fluxipc_http.c",
+      "source_location": "L494",
+      "_origin": "ast",
+      "id": "src_fluxipc_http_parse_request_line",
+      "community": 10,
+      "norm_label": "parse_request_line()"
+    },
+    {
       "label": "http_conn_process()",
       "file_type": "code",
       "source_file": "src/fluxipc_http.c",
-      "source_location": "L488",
+      "source_location": "L522",
       "_origin": "ast",
       "id": "src_fluxipc_http_http_conn_process",
-      "community": 8,
+      "community": 10,
       "norm_label": "http_conn_process()"
     },
     {
       "label": "set_nonblocking()",
       "file_type": "code",
       "source_file": "src/fluxipc_http.c",
-      "source_location": "L581",
+      "source_location": "L624",
       "_origin": "ast",
       "id": "src_fluxipc_http_set_nonblocking",
       "community": 10,
@@ -1480,7 +1520,7 @@
       "label": "fluxipc_http_start()",
       "file_type": "code",
       "source_file": "src/fluxipc_http.c",
-      "source_location": "L588",
+      "source_location": "L631",
       "_origin": "ast",
       "id": "src_fluxipc_http_fluxipc_http_start",
       "community": 10,
@@ -1490,7 +1530,7 @@
       "label": "fluxipc_http_stop()",
       "file_type": "code",
       "source_file": "src/fluxipc_http.c",
-      "source_location": "L624",
+      "source_location": "L667",
       "_origin": "ast",
       "id": "src_fluxipc_http_fluxipc_http_stop",
       "community": 10,
@@ -1633,7 +1673,7 @@
       "source_location": "L272",
       "_origin": "ast",
       "id": "src_fluxipc_interactive_load_local_leaf_cb",
-      "community": 0,
+      "community": 2,
       "norm_label": "load_local_leaf_cb()"
     },
     {
@@ -1643,7 +1683,7 @@
       "source_location": "L272",
       "_origin": "ast",
       "id": "src_fluxipc_interactive_c_fluxipc_node_t",
-      "community": 0,
+      "community": 2,
       "norm_label": "fluxipc_node_t"
     },
     {
@@ -2000,7 +2040,7 @@
       "label": "send_iov_all()",
       "file_type": "code",
       "source_file": "src/fluxipc_sock.c",
-      "source_location": "L256",
+      "source_location": "L260",
       "_origin": "ast",
       "id": "src_fluxipc_sock_send_iov_all",
       "community": 1,
@@ -2010,7 +2050,7 @@
       "label": "recv_all()",
       "file_type": "code",
       "source_file": "src/fluxipc_sock.c",
-      "source_location": "L280",
+      "source_location": "L284",
       "_origin": "ast",
       "id": "src_fluxipc_sock_recv_all",
       "community": 1,
@@ -2020,7 +2060,7 @@
       "label": "client_send_request()",
       "file_type": "code",
       "source_file": "src/fluxipc_sock.c",
-      "source_location": "L292",
+      "source_location": "L296",
       "_origin": "ast",
       "id": "src_fluxipc_sock_client_send_request",
       "community": 1,
@@ -2030,7 +2070,7 @@
       "label": "client_connect()",
       "file_type": "code",
       "source_file": "src/fluxipc_sock.c",
-      "source_location": "L327",
+      "source_location": "L331",
       "_origin": "ast",
       "id": "src_fluxipc_sock_client_connect",
       "community": 1,
@@ -2040,7 +2080,7 @@
       "label": "fluxipc_call()",
       "file_type": "code",
       "source_file": "src/fluxipc_sock.c",
-      "source_location": "L343",
+      "source_location": "L347",
       "_origin": "ast",
       "id": "src_fluxipc_sock_fluxipc_call",
       "community": 1,
@@ -2050,7 +2090,7 @@
       "label": "fluxipc_call_json()",
       "file_type": "code",
       "source_file": "src/fluxipc_sock.c",
-      "source_location": "L377",
+      "source_location": "L381",
       "_origin": "ast",
       "id": "src_fluxipc_sock_fluxipc_call_json",
       "community": 17,
@@ -2060,7 +2100,7 @@
       "label": "sock_call_alloc()",
       "file_type": "code",
       "source_file": "src/fluxipc_sock.c",
-      "source_location": "L411",
+      "source_location": "L415",
       "_origin": "ast",
       "id": "src_fluxipc_sock_sock_call_alloc",
       "community": 1,
@@ -2350,7 +2390,7 @@
       "label": "json_field()",
       "file_type": "code",
       "source_file": "src/fluxipc_util.c",
-      "source_location": "L118",
+      "source_location": "L135",
       "_origin": "ast",
       "id": "src_fluxipc_util_json_field",
       "community": 5,
@@ -2360,7 +2400,7 @@
       "label": "cJSON",
       "file_type": "code",
       "source_file": "src/fluxipc_util.c",
-      "source_location": "L118",
+      "source_location": "L135",
       "_origin": "ast",
       "id": "src_fluxipc_util_c_cjson",
       "community": 5,
@@ -2370,7 +2410,7 @@
       "label": "fluxipc_json_request_t",
       "file_type": "code",
       "source_file": "src/fluxipc_util.c",
-      "source_location": "L118",
+      "source_location": "L135",
       "_origin": "ast",
       "id": "src_fluxipc_util_c_fluxipc_json_request_t",
       "community": 5,
@@ -2380,7 +2420,7 @@
       "label": "query_field()",
       "file_type": "code",
       "source_file": "src/fluxipc_util.c",
-      "source_location": "L125",
+      "source_location": "L142",
       "_origin": "ast",
       "id": "src_fluxipc_util_query_field",
       "community": 5,
@@ -2390,7 +2430,7 @@
       "label": "bool_from_string()",
       "file_type": "code",
       "source_file": "src/fluxipc_util.c",
-      "source_location": "L135",
+      "source_location": "L152",
       "_origin": "ast",
       "id": "src_fluxipc_util_bool_from_string",
       "community": 5,
@@ -2400,7 +2440,7 @@
       "label": "fluxipc_json_str()",
       "file_type": "code",
       "source_file": "src/fluxipc_util.c",
-      "source_location": "L147",
+      "source_location": "L164",
       "_origin": "ast",
       "id": "src_fluxipc_util_fluxipc_json_str",
       "community": 5,
@@ -2410,7 +2450,7 @@
       "label": "fluxipc_json_int()",
       "file_type": "code",
       "source_file": "src/fluxipc_util.c",
-      "source_location": "L157",
+      "source_location": "L174",
       "_origin": "ast",
       "id": "src_fluxipc_util_fluxipc_json_int",
       "community": 5,
@@ -2420,7 +2460,7 @@
       "label": "fluxipc_json_double()",
       "file_type": "code",
       "source_file": "src/fluxipc_util.c",
-      "source_location": "L170",
+      "source_location": "L187",
       "_origin": "ast",
       "id": "src_fluxipc_util_fluxipc_json_double",
       "community": 5,
@@ -2430,7 +2470,7 @@
       "label": "fluxipc_json_bool()",
       "file_type": "code",
       "source_file": "src/fluxipc_util.c",
-      "source_location": "L182",
+      "source_location": "L199",
       "_origin": "ast",
       "id": "src_fluxipc_util_fluxipc_json_bool",
       "community": 5,
@@ -2440,7 +2480,7 @@
       "label": "fluxipc_json_has()",
       "file_type": "code",
       "source_file": "src/fluxipc_util.c",
-      "source_location": "L195",
+      "source_location": "L212",
       "_origin": "ast",
       "id": "src_fluxipc_util_fluxipc_json_has",
       "community": 5,
@@ -2450,7 +2490,7 @@
       "label": "status_from_code()",
       "file_type": "code",
       "source_file": "src/fluxipc_util.c",
-      "source_location": "L202",
+      "source_location": "L219",
       "_origin": "ast",
       "id": "src_fluxipc_util_status_from_code",
       "community": 5,
@@ -2460,7 +2500,7 @@
       "label": "errno_from_status()",
       "file_type": "code",
       "source_file": "src/fluxipc_util.c",
-      "source_location": "L221",
+      "source_location": "L238",
       "_origin": "ast",
       "id": "src_fluxipc_util_errno_from_status",
       "community": 5,
@@ -2470,7 +2510,7 @@
       "label": "fluxipc_json_error()",
       "file_type": "code",
       "source_file": "src/fluxipc_util.c",
-      "source_location": "L236",
+      "source_location": "L253",
       "_origin": "ast",
       "id": "src_fluxipc_util_fluxipc_json_error",
       "community": 5,
@@ -2480,7 +2520,7 @@
       "label": "fluxipc_json_response_t",
       "file_type": "code",
       "source_file": "src/fluxipc_util.c",
-      "source_location": "L236",
+      "source_location": "L253",
       "_origin": "ast",
       "id": "src_fluxipc_util_c_fluxipc_json_response_t",
       "community": 5,
@@ -2493,7 +2533,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "bench_bench",
-      "community": 19,
+      "community": 1,
       "norm_label": "bench.c"
     },
     {
@@ -2503,7 +2543,7 @@
       "source_location": "L55",
       "_origin": "ast",
       "id": "bench_bench_server_path",
-      "community": 19,
+      "community": 1,
       "norm_label": "server_path()"
     },
     {
@@ -2513,7 +2553,7 @@
       "source_location": "L61",
       "_origin": "ast",
       "id": "bench_bench_start_server",
-      "community": 19,
+      "community": 1,
       "norm_label": "start_server()"
     },
     {
@@ -2523,7 +2563,7 @@
       "source_location": "L61",
       "_origin": "ast",
       "id": "tests_bench_bench_c_pid_t",
-      "community": 19,
+      "community": 1,
       "norm_label": "pid_t"
     },
     {
@@ -2533,7 +2573,7 @@
       "source_location": "L75",
       "_origin": "ast",
       "id": "bench_bench_stop_server",
-      "community": 19,
+      "community": 1,
       "norm_label": "stop_server()"
     },
     {
@@ -2543,7 +2583,7 @@
       "source_location": "L84",
       "_origin": "ast",
       "id": "bench_bench_shutdown_server",
-      "community": 19,
+      "community": 1,
       "norm_label": "shutdown_server()"
     },
     {
@@ -2553,7 +2593,7 @@
       "source_location": "L102",
       "_origin": "ast",
       "id": "bench_bench_rss_kb",
-      "community": 19,
+      "community": 1,
       "norm_label": "rss_kb()"
     },
     {
@@ -2563,7 +2603,7 @@
       "source_location": "L115",
       "_origin": "ast",
       "id": "bench_bench_now_ns",
-      "community": 19,
+      "community": 1,
       "norm_label": "now_ns()"
     },
     {
@@ -2573,7 +2613,7 @@
       "source_location": "L124",
       "_origin": "ast",
       "id": "bench_bench_send_all",
-      "community": 19,
+      "community": 1,
       "norm_label": "send_all()"
     },
     {
@@ -2583,7 +2623,7 @@
       "source_location": "L137",
       "_origin": "ast",
       "id": "bench_bench_http_get_once",
-      "community": 19,
+      "community": 1,
       "norm_label": "http_get_once()"
     },
     {
@@ -2593,7 +2633,7 @@
       "source_location": "L178",
       "_origin": "ast",
       "id": "bench_bench_ipc_once",
-      "community": 19,
+      "community": 1,
       "norm_label": "ipc_once()"
     },
     {
@@ -2603,7 +2643,7 @@
       "source_location": "L187",
       "_origin": "ast",
       "id": "bench_bench_ipc_json_once",
-      "community": 19,
+      "community": 1,
       "norm_label": "ipc_json_once()"
     },
     {
@@ -2613,7 +2653,7 @@
       "source_location": "L197",
       "_origin": "ast",
       "id": "bench_bench_ipc_json_pos_once",
-      "community": 19,
+      "community": 1,
       "norm_label": "ipc_json_pos_once()"
     },
     {
@@ -2623,7 +2663,7 @@
       "source_location": "L210",
       "_origin": "ast",
       "id": "bench_bench_cmp_double",
-      "community": 19,
+      "community": 1,
       "norm_label": "cmp_double()"
     },
     {
@@ -2633,7 +2673,7 @@
       "source_location": "L217",
       "_origin": "ast",
       "id": "bench_bench_pct",
-      "community": 19,
+      "community": 1,
       "norm_label": "pct()"
     },
     {
@@ -2643,7 +2683,7 @@
       "source_location": "L226",
       "_origin": "ast",
       "id": "bench_bench_finish",
-      "community": 19,
+      "community": 1,
       "norm_label": "finish()"
     },
     {
@@ -2653,7 +2693,7 @@
       "source_location": "L226",
       "_origin": "ast",
       "id": "result_t",
-      "community": 19,
+      "community": 1,
       "norm_label": "result_t"
     },
     {
@@ -2663,7 +2703,7 @@
       "source_location": "L245",
       "_origin": "ast",
       "id": "bench_bench_print_result",
-      "community": 19,
+      "community": 1,
       "norm_label": "print_result()"
     },
     {
@@ -2673,7 +2713,7 @@
       "source_location": "L255",
       "_origin": "ast",
       "id": "bench_bench_bench_ipc_seq",
-      "community": 19,
+      "community": 1,
       "norm_label": "bench_ipc_seq()"
     },
     {
@@ -2683,7 +2723,7 @@
       "source_location": "L275",
       "_origin": "ast",
       "id": "bench_bench_bench_ipc_json_seq",
-      "community": 19,
+      "community": 1,
       "norm_label": "bench_ipc_json_seq()"
     },
     {
@@ -2693,7 +2733,7 @@
       "source_location": "L295",
       "_origin": "ast",
       "id": "bench_bench_bench_ipc_json_pos_seq",
-      "community": 19,
+      "community": 1,
       "norm_label": "bench_ipc_json_pos_seq()"
     },
     {
@@ -2703,7 +2743,7 @@
       "source_location": "L315",
       "_origin": "ast",
       "id": "bench_bench_bench_http_seq",
-      "community": 19,
+      "community": 1,
       "norm_label": "bench_http_seq()"
     },
     {
@@ -2713,7 +2753,7 @@
       "source_location": "L345",
       "_origin": "ast",
       "id": "bench_bench_thread_fn",
-      "community": 19,
+      "community": 1,
       "norm_label": "thread_fn()"
     },
     {
@@ -2723,7 +2763,7 @@
       "source_location": "L357",
       "_origin": "ast",
       "id": "bench_bench_bench_parallel",
-      "community": 19,
+      "community": 1,
       "norm_label": "bench_parallel()"
     },
     {
@@ -2733,7 +2773,7 @@
       "source_location": "L410",
       "_origin": "ast",
       "id": "bench_bench_env_long",
-      "community": 19,
+      "community": 1,
       "norm_label": "env_long()"
     },
     {
@@ -2743,7 +2783,7 @@
       "source_location": "L419",
       "_origin": "ast",
       "id": "bench_bench_main",
-      "community": 19,
+      "community": 1,
       "norm_label": "main()"
     },
     {
@@ -3233,7 +3273,7 @@
       "source_location": "L632",
       "_origin": "ast",
       "id": "tests_example_server_register_endpoints",
-      "community": 0,
+      "community": 17,
       "norm_label": "register_endpoints()"
     },
     {
@@ -3263,7 +3303,7 @@
       "source_location": "L703",
       "_origin": "ast",
       "id": "tests_example_server_main",
-      "community": 0,
+      "community": 20,
       "norm_label": "main()"
     },
     {
@@ -4077,20 +4117,30 @@
       "norm_label": "test_write_partial_then_drain()"
     },
     {
-      "label": "test_poll_no_descriptors()",
+      "label": "test_idle_timeout()",
       "file_type": "code",
       "source_file": "tests/unit/test_conn.c",
       "source_location": "L306",
       "_origin": "ast",
+      "id": "unit_test_conn_test_idle_timeout",
+      "community": 8,
+      "norm_label": "test_idle_timeout()"
+    },
+    {
+      "label": "test_poll_no_descriptors()",
+      "file_type": "code",
+      "source_file": "tests/unit/test_conn.c",
+      "source_location": "L330",
+      "_origin": "ast",
       "id": "unit_test_conn_test_poll_no_descriptors",
-      "community": 20,
+      "community": 8,
       "norm_label": "test_poll_no_descriptors()"
     },
     {
       "label": "ut_conn()",
       "file_type": "code",
       "source_file": "tests/unit/test_conn.c",
-      "source_location": "L326",
+      "source_location": "L350",
       "_origin": "ast",
       "id": "unit_test_conn_ut_conn",
       "community": 8,
@@ -4123,7 +4173,7 @@
       "source_location": "L29",
       "_origin": "ast",
       "id": "unit_test_core_core_teardown",
-      "community": 20,
+      "community": 0,
       "norm_label": "core_teardown()"
     },
     {
@@ -4193,7 +4243,7 @@
       "source_location": "L73",
       "_origin": "ast",
       "id": "unit_test_core_find_leaf_named",
-      "community": 0,
+      "community": 17,
       "norm_label": "find_leaf_named()"
     },
     {
@@ -4203,7 +4253,7 @@
       "source_location": "L73",
       "_origin": "ast",
       "id": "tests_unit_test_core_c_cjson",
-      "community": 0,
+      "community": 17,
       "norm_label": "cjson"
     },
     {
@@ -4273,7 +4323,7 @@
       "source_location": "L118",
       "_origin": "ast",
       "id": "unit_test_core_test_init_invalid",
-      "community": 0,
+      "community": 20,
       "norm_label": "test_init_invalid()"
     },
     {
@@ -4283,7 +4333,7 @@
       "source_location": "L127",
       "_origin": "ast",
       "id": "unit_test_core_test_init_double",
-      "community": 0,
+      "community": 20,
       "norm_label": "test_init_double()"
     },
     {
@@ -4293,7 +4343,7 @@
       "source_location": "L141",
       "_origin": "ast",
       "id": "unit_test_core_test_init_http_port_in_use",
-      "community": 2,
+      "community": 20,
       "norm_label": "test_init_http_port_in_use()"
     },
     {
@@ -4303,7 +4353,7 @@
       "source_location": "L172",
       "_origin": "ast",
       "id": "unit_test_core_test_init_run_dir_exists",
-      "community": 2,
+      "community": 20,
       "norm_label": "test_init_run_dir_exists()"
     },
     {
@@ -4353,7 +4403,7 @@
       "source_location": "L264",
       "_origin": "ast",
       "id": "unit_test_core_test_registration",
-      "community": 0,
+      "community": 17,
       "norm_label": "test_registration()"
     },
     {
@@ -4423,7 +4473,7 @@
       "source_location": "L568",
       "_origin": "ast",
       "id": "unit_test_core_test_name_length_boundary",
-      "community": 0,
+      "community": 17,
       "norm_label": "test_name_length_boundary()"
     },
     {
@@ -4443,7 +4493,7 @@
       "source_location": "L601",
       "_origin": "ast",
       "id": "unit_test_core_test_manifest_all_methods",
-      "community": 0,
+      "community": 17,
       "norm_label": "test_manifest_all_methods()"
     },
     {
@@ -4453,7 +4503,7 @@
       "source_location": "L616",
       "_origin": "ast",
       "id": "unit_test_core_test_remove_and_prune",
-      "community": 0,
+      "community": 17,
       "norm_label": "test_remove_and_prune()"
     },
     {
@@ -4463,7 +4513,7 @@
       "source_location": "L638",
       "_origin": "ast",
       "id": "unit_test_core_test_node_leaves",
-      "community": 0,
+      "community": 17,
       "norm_label": "test_node_leaves()"
     },
     {
@@ -4483,7 +4533,7 @@
       "source_location": "L669",
       "_origin": "ast",
       "id": "unit_test_core_test_manifest",
-      "community": 0,
+      "community": 17,
       "norm_label": "test_manifest()"
     },
     {
@@ -4493,7 +4543,7 @@
       "source_location": "L730",
       "_origin": "ast",
       "id": "unit_test_core_test_manifest_root_paths",
-      "community": 0,
+      "community": 17,
       "norm_label": "test_manifest_root_paths()"
     },
     {
@@ -4513,7 +4563,7 @@
       "source_location": "L770",
       "_origin": "ast",
       "id": "unit_test_core_test_dispatch_ipc",
-      "community": 0,
+      "community": 17,
       "norm_label": "test_dispatch_ipc()"
     },
     {
@@ -4523,7 +4573,7 @@
       "source_location": "L800",
       "_origin": "ast",
       "id": "unit_test_core_test_dispatch_http",
-      "community": 0,
+      "community": 17,
       "norm_label": "test_dispatch_http()"
     },
     {
@@ -4533,7 +4583,7 @@
       "source_location": "L835",
       "_origin": "ast",
       "id": "unit_test_core_test_hooks",
-      "community": 0,
+      "community": 17,
       "norm_label": "test_hooks()"
     },
     {
@@ -4593,7 +4643,7 @@
       "source_location": "L933",
       "_origin": "ast",
       "id": "unit_test_core_test_bind_positional",
-      "community": 0,
+      "community": 17,
       "norm_label": "test_bind_positional()"
     },
     {
@@ -4940,7 +4990,7 @@
       "label": "test_body_parsing_variants()",
       "file_type": "code",
       "source_file": "tests/unit/test_http.c",
-      "source_location": "L464",
+      "source_location": "L469",
       "_origin": "ast",
       "id": "unit_test_http_test_body_parsing_variants",
       "community": 17,
@@ -4950,7 +5000,7 @@
       "label": "test_body_not_yet_received()",
       "file_type": "code",
       "source_file": "tests/unit/test_http.c",
-      "source_location": "L489",
+      "source_location": "L494",
       "_origin": "ast",
       "id": "unit_test_http_test_body_not_yet_received",
       "community": 17,
@@ -4960,7 +5010,7 @@
       "label": "test_header_overflow()",
       "file_type": "code",
       "source_file": "tests/unit/test_http.c",
-      "source_location": "L499",
+      "source_location": "L504",
       "_origin": "ast",
       "id": "unit_test_http_test_header_overflow",
       "community": 17,
@@ -4970,17 +5020,37 @@
       "label": "test_header_too_large()",
       "file_type": "code",
       "source_file": "tests/unit/test_http.c",
-      "source_location": "L520",
+      "source_location": "L525",
       "_origin": "ast",
       "id": "unit_test_http_test_header_too_large",
       "community": 17,
       "norm_label": "test_header_too_large()"
     },
     {
+      "label": "test_target_too_long()",
+      "file_type": "code",
+      "source_file": "tests/unit/test_http.c",
+      "source_location": "L548",
+      "_origin": "ast",
+      "id": "unit_test_http_test_target_too_long",
+      "community": 17,
+      "norm_label": "test_target_too_long()"
+    },
+    {
+      "label": "test_invalid_content_length()",
+      "file_type": "code",
+      "source_file": "tests/unit/test_http.c",
+      "source_location": "L568",
+      "_origin": "ast",
+      "id": "unit_test_http_test_invalid_content_length",
+      "community": 17,
+      "norm_label": "test_invalid_content_length()"
+    },
+    {
       "label": "test_malformed_request_line()",
       "file_type": "code",
       "source_file": "tests/unit/test_http.c",
-      "source_location": "L543",
+      "source_location": "L579",
       "_origin": "ast",
       "id": "unit_test_http_test_malformed_request_line",
       "community": 17,
@@ -4990,7 +5060,7 @@
       "label": "test_handler_error_mapping()",
       "file_type": "code",
       "source_file": "tests/unit/test_http.c",
-      "source_location": "L554",
+      "source_location": "L590",
       "_origin": "ast",
       "id": "unit_test_http_test_handler_error_mapping",
       "community": 17,
@@ -5000,7 +5070,7 @@
       "label": "test_status_reasons()",
       "file_type": "code",
       "source_file": "tests/unit/test_http.c",
-      "source_location": "L592",
+      "source_location": "L628",
       "_origin": "ast",
       "id": "unit_test_http_test_status_reasons",
       "community": 17,
@@ -5010,7 +5080,7 @@
       "label": "test_empty_body_responses()",
       "file_type": "code",
       "source_file": "tests/unit/test_http.c",
-      "source_location": "L609",
+      "source_location": "L645",
       "_origin": "ast",
       "id": "unit_test_http_test_empty_body_responses",
       "community": 17,
@@ -5020,7 +5090,7 @@
       "label": "test_header_trailing_whitespace()",
       "file_type": "code",
       "source_file": "tests/unit/test_http.c",
-      "source_location": "L630",
+      "source_location": "L666",
       "_origin": "ast",
       "id": "unit_test_http_test_header_trailing_whitespace",
       "community": 17,
@@ -5030,7 +5100,7 @@
       "label": "test_http_start_stop()",
       "file_type": "code",
       "source_file": "tests/unit/test_http.c",
-      "source_location": "L644",
+      "source_location": "L680",
       "_origin": "ast",
       "id": "unit_test_http_test_http_start_stop",
       "community": 10,
@@ -5040,7 +5110,7 @@
       "label": "test_custom_status()",
       "file_type": "code",
       "source_file": "tests/unit/test_http.c",
-      "source_location": "L661",
+      "source_location": "L697",
       "_origin": "ast",
       "id": "unit_test_http_test_custom_status",
       "community": 17,
@@ -5050,7 +5120,7 @@
       "label": "ut_http()",
       "file_type": "code",
       "source_file": "tests/unit/test_http.c",
-      "source_location": "L676",
+      "source_location": "L712",
       "_origin": "ast",
       "id": "unit_test_http_ut_http",
       "community": 16,
@@ -5760,7 +5830,7 @@
       "label": "test_process_call()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L98",
+      "source_location": "L104",
       "_origin": "ast",
       "id": "unit_test_sock_test_process_call",
       "community": 17,
@@ -5770,7 +5840,7 @@
       "label": "test_process_list()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L124",
+      "source_location": "L130",
       "_origin": "ast",
       "id": "unit_test_sock_test_process_list",
       "community": 17,
@@ -5780,7 +5850,7 @@
       "label": "test_client_roundtrip()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L143",
+      "source_location": "L149",
       "_origin": "ast",
       "id": "unit_test_sock_test_client_roundtrip",
       "community": 17,
@@ -5790,7 +5860,7 @@
       "label": "test_client_truncation()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L164",
+      "source_location": "L170",
       "_origin": "ast",
       "id": "unit_test_sock_test_client_truncation",
       "community": 17,
@@ -5800,7 +5870,7 @@
       "label": "test_call_alloc()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L181",
+      "source_location": "L187",
       "_origin": "ast",
       "id": "unit_test_sock_test_call_alloc",
       "community": 17,
@@ -5810,7 +5880,7 @@
       "label": "record_ipc()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L204",
+      "source_location": "L210",
       "_origin": "ast",
       "id": "unit_test_sock_record_ipc",
       "community": 17,
@@ -5820,17 +5890,27 @@
       "label": "build_call_raw()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L216",
+      "source_location": "L222",
       "_origin": "ast",
       "id": "unit_test_sock_build_call_raw",
       "community": 17,
       "norm_label": "build_call_raw()"
     },
     {
+      "label": "test_process_path_nul()",
+      "file_type": "code",
+      "source_file": "tests/unit/test_sock.c",
+      "source_location": "L237",
+      "_origin": "ast",
+      "id": "unit_test_sock_test_process_path_nul",
+      "community": 17,
+      "norm_label": "test_process_path_nul()"
+    },
+    {
       "label": "test_process_args_multiple()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L231",
+      "source_location": "L258",
       "_origin": "ast",
       "id": "unit_test_sock_test_process_args_multiple",
       "community": 17,
@@ -5840,7 +5920,7 @@
       "label": "test_process_args_empty()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L251",
+      "source_location": "L278",
       "_origin": "ast",
       "id": "unit_test_sock_test_process_args_empty",
       "community": 17,
@@ -5850,7 +5930,7 @@
       "label": "test_process_args_limit()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L266",
+      "source_location": "L293",
       "_origin": "ast",
       "id": "unit_test_sock_test_process_args_limit",
       "community": 17,
@@ -5860,7 +5940,7 @@
       "label": "test_call_null_outbuf()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L292",
+      "source_location": "L319",
       "_origin": "ast",
       "id": "unit_test_sock_test_call_null_outbuf",
       "community": 17,
@@ -5870,7 +5950,7 @@
       "label": "test_call_alloc_null_out()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L305",
+      "source_location": "L332",
       "_origin": "ast",
       "id": "unit_test_sock_test_call_alloc_null_out",
       "community": 17,
@@ -5880,7 +5960,7 @@
       "label": "test_client_connect_nonsocket()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L319",
+      "source_location": "L346",
       "_origin": "ast",
       "id": "unit_test_sock_test_client_connect_nonsocket",
       "community": 1,
@@ -5890,7 +5970,7 @@
       "label": "fake_server_fn()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L332",
+      "source_location": "L359",
       "_origin": "ast",
       "id": "unit_test_sock_fake_server_fn",
       "community": 17,
@@ -5900,7 +5980,7 @@
       "label": "fake_sock_path()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L364",
+      "source_location": "L391",
       "_origin": "ast",
       "id": "unit_test_sock_fake_sock_path",
       "community": 1,
@@ -5910,7 +5990,7 @@
       "label": "test_client_bad_magic()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L369",
+      "source_location": "L396",
       "_origin": "ast",
       "id": "unit_test_sock_test_client_bad_magic",
       "community": 1,
@@ -5920,7 +6000,7 @@
       "label": "test_call_alloc_bad_magic()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L386",
+      "source_location": "L413",
       "_origin": "ast",
       "id": "unit_test_sock_test_call_alloc_bad_magic",
       "community": 1,
@@ -5930,7 +6010,7 @@
       "label": "test_client_truncated_body()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L403",
+      "source_location": "L430",
       "_origin": "ast",
       "id": "unit_test_sock_test_client_truncated_body",
       "community": 1,
@@ -5940,7 +6020,7 @@
       "label": "test_call_alloc_truncated_body()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L421",
+      "source_location": "L448",
       "_origin": "ast",
       "id": "unit_test_sock_test_call_alloc_truncated_body",
       "community": 1,
@@ -5950,7 +6030,7 @@
       "label": "test_client_null_path_and_len()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L438",
+      "source_location": "L465",
       "_origin": "ast",
       "id": "unit_test_sock_test_client_null_path_and_len",
       "community": 17,
@@ -5960,7 +6040,7 @@
       "label": "test_server_create_bind_failure()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L454",
+      "source_location": "L481",
       "_origin": "ast",
       "id": "unit_test_sock_test_server_create_bind_failure",
       "community": 2,
@@ -5970,7 +6050,7 @@
       "label": "json_req_handler()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L482",
+      "source_location": "L509",
       "_origin": "ast",
       "id": "unit_test_sock_json_req_handler",
       "community": 17,
@@ -5980,7 +6060,7 @@
       "label": "fluxipc_http_request_t",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L482",
+      "source_location": "L509",
       "_origin": "ast",
       "id": "tests_unit_test_sock_c_fluxipc_http_request_t",
       "community": 17,
@@ -5990,7 +6070,7 @@
       "label": "fluxipc_http_response_t",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L482",
+      "source_location": "L509",
       "_origin": "ast",
       "id": "tests_unit_test_sock_c_fluxipc_http_response_t",
       "community": 17,
@@ -6000,7 +6080,7 @@
       "label": "test_call_json_body()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L502",
+      "source_location": "L529",
       "_origin": "ast",
       "id": "unit_test_sock_test_call_json_body",
       "community": 17,
@@ -6010,7 +6090,7 @@
       "label": "test_call_json_query()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L526",
+      "source_location": "L553",
       "_origin": "ast",
       "id": "unit_test_sock_test_call_json_query",
       "community": 17,
@@ -6020,7 +6100,7 @@
       "label": "test_call_json_positional()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L549",
+      "source_location": "L576",
       "_origin": "ast",
       "id": "unit_test_sock_test_call_json_positional",
       "community": 17,
@@ -6030,7 +6110,7 @@
       "label": "test_call_json_positional_without_schema()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L585",
+      "source_location": "L612",
       "_origin": "ast",
       "id": "unit_test_sock_test_call_json_positional_without_schema",
       "community": 17,
@@ -6040,7 +6120,7 @@
       "label": "test_call_json_invalid_body()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L606",
+      "source_location": "L633",
       "_origin": "ast",
       "id": "unit_test_sock_test_call_json_invalid_body",
       "community": 17,
@@ -6050,7 +6130,7 @@
       "label": "test_call_json_no_http_handler()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L628",
+      "source_location": "L655",
       "_origin": "ast",
       "id": "unit_test_sock_test_call_json_no_http_handler",
       "community": 17,
@@ -6060,7 +6140,7 @@
       "label": "test_call_json_invalid_args()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L650",
+      "source_location": "L677",
       "_origin": "ast",
       "id": "unit_test_sock_test_call_json_invalid_args",
       "community": 17,
@@ -6070,7 +6150,7 @@
       "label": "ut_sock()",
       "file_type": "code",
       "source_file": "tests/unit/test_sock.c",
-      "source_location": "L669",
+      "source_location": "L696",
       "_origin": "ast",
       "id": "unit_test_sock_ut_sock",
       "community": 16,
@@ -6380,7 +6460,7 @@
       "label": "test_content_length_absent()",
       "file_type": "code",
       "source_file": "tests/unit/test_util.c",
-      "source_location": "L217",
+      "source_location": "L220",
       "_origin": "ast",
       "id": "unit_test_util_test_content_length_absent",
       "community": 16,
@@ -6390,7 +6470,7 @@
       "label": "test_content_length_no_mutation()",
       "file_type": "code",
       "source_file": "tests/unit/test_util.c",
-      "source_location": "L235",
+      "source_location": "L239",
       "_origin": "ast",
       "id": "unit_test_util_test_content_length_no_mutation",
       "community": 16,
@@ -6400,7 +6480,7 @@
       "label": "test_url_decode_hex_boundaries()",
       "file_type": "code",
       "source_file": "tests/unit/test_util.c",
-      "source_location": "L247",
+      "source_location": "L253",
       "_origin": "ast",
       "id": "unit_test_util_test_url_decode_hex_boundaries",
       "community": 16,
@@ -6410,7 +6490,7 @@
       "label": "test_url_decode_loop_sentinel()",
       "file_type": "code",
       "source_file": "tests/unit/test_util.c",
-      "source_location": "L281",
+      "source_location": "L287",
       "_origin": "ast",
       "id": "unit_test_util_test_url_decode_loop_sentinel",
       "community": 16,
@@ -6420,7 +6500,7 @@
       "label": "test_find_content_length_digit_boundaries()",
       "file_type": "code",
       "source_file": "tests/unit/test_util.c",
-      "source_location": "L291",
+      "source_location": "L297",
       "_origin": "ast",
       "id": "unit_test_util_test_find_content_length_digit_boundaries",
       "community": 16,
@@ -6430,7 +6510,7 @@
       "label": "test_query_exact_arena()",
       "file_type": "code",
       "source_file": "tests/unit/test_util.c",
-      "source_location": "L302",
+      "source_location": "L312",
       "_origin": "ast",
       "id": "unit_test_util_test_query_exact_arena",
       "community": 16,
@@ -6440,7 +6520,7 @@
       "label": "test_schema_macros()",
       "file_type": "code",
       "source_file": "tests/unit/test_util.c",
-      "source_location": "L315",
+      "source_location": "L325",
       "_origin": "ast",
       "id": "unit_test_util_test_schema_macros",
       "community": 16,
@@ -6450,7 +6530,7 @@
       "label": "test_json_request_helpers()",
       "file_type": "code",
       "source_file": "tests/unit/test_util.c",
-      "source_location": "L348",
+      "source_location": "L358",
       "_origin": "ast",
       "id": "unit_test_util_test_json_request_helpers",
       "community": 5,
@@ -6460,17 +6540,27 @@
       "label": "test_json_error_helper()",
       "file_type": "code",
       "source_file": "tests/unit/test_util.c",
-      "source_location": "L407",
+      "source_location": "L417",
       "_origin": "ast",
       "id": "unit_test_util_test_json_error_helper",
       "community": 5,
       "norm_label": "test_json_error_helper()"
     },
     {
+      "label": "test_content_length_invalid()",
+      "file_type": "code",
+      "source_file": "tests/unit/test_util.c",
+      "source_location": "L460",
+      "_origin": "ast",
+      "id": "unit_test_util_test_content_length_invalid",
+      "community": 16,
+      "norm_label": "test_content_length_invalid()"
+    },
+    {
       "label": "ut_util()",
       "file_type": "code",
       "source_file": "tests/unit/test_util.c",
-      "source_location": "L450",
+      "source_location": "L479",
       "_origin": "ast",
       "id": "unit_test_util_ut_util",
       "community": 16,
@@ -9047,6 +9137,16 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "src/fluxipc_conn.c",
+      "source_location": "L210",
+      "weight": 1.0,
+      "source": "src_fluxipc_conn",
+      "target": "src_fluxipc_conn_conn_idle_wait_ms",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/fluxipc_conn.c",
       "source_location": "L172",
       "weight": 1.0,
       "confidence_score": 1.0,
@@ -9117,6 +9217,16 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "src/fluxipc_conn.c",
+      "source_location": "L228",
+      "weight": 1.0,
+      "source": "src_fluxipc_conn",
+      "target": "src_fluxipc_conn_conn_sweep_idle",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/fluxipc_conn.c",
       "source_location": "L125",
       "weight": 1.0,
       "confidence_score": 1.0,
@@ -9174,6 +9284,71 @@
       "target": "src_fluxipc_conn_fluxipc_ut_pool_size"
     },
     {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/fluxipc_conn.c",
+      "source_location": "L33",
+      "weight": 1.0,
+      "source": "src_fluxipc_conn",
+      "target": "src_fluxipc_conn_now_ms",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "src/fluxipc_conn.c",
+      "source_location": "L87",
+      "weight": 1.0,
+      "source": "src_fluxipc_conn_conn_alloc",
+      "target": "src_fluxipc_conn_now_ms",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "src/fluxipc_conn.c",
+      "source_location": "L212",
+      "weight": 1.0,
+      "source": "src_fluxipc_conn_conn_idle_wait_ms",
+      "target": "src_fluxipc_conn_now_ms",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "src/fluxipc_conn.c",
+      "source_location": "L197",
+      "weight": 1.0,
+      "source": "src_fluxipc_conn_conn_read",
+      "target": "src_fluxipc_conn_now_ms",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "src/fluxipc_conn.c",
+      "source_location": "L231",
+      "weight": 1.0,
+      "source": "src_fluxipc_conn_conn_sweep_idle",
+      "target": "src_fluxipc_conn_now_ms",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "src/fluxipc_conn.c",
+      "source_location": "L162",
+      "weight": 1.0,
+      "source": "src_fluxipc_conn_conn_write",
+      "target": "src_fluxipc_conn_now_ms",
+      "confidence_score": 1.0
+    },
+    {
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "src/fluxipc_conn.c",
@@ -9205,6 +9380,17 @@
       "confidence_score": 1.0,
       "source": "src_fluxipc_conn_conn_read",
       "target": "src_fluxipc_conn_conn_close"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "src/fluxipc_conn.c",
+      "source_location": "L237",
+      "weight": 1.0,
+      "source": "src_fluxipc_conn_conn_sweep_idle",
+      "target": "src_fluxipc_conn_conn_close",
+      "confidence_score": 1.0
     },
     {
       "relation": "calls",
@@ -9347,6 +9533,17 @@
       "source_location": "L40",
       "weight": 1.0,
       "source": "unit_test_conn_test_conn_slot_accessor",
+      "target": "src_fluxipc_conn_conn_pool_init"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "tests/unit/test_conn.c",
+      "source_location": "L310",
+      "weight": 1.0,
+      "source": "unit_test_conn_test_idle_timeout",
       "target": "src_fluxipc_conn_conn_pool_init"
     },
     {
@@ -9804,6 +10001,17 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "src/fluxipc_conn.c",
+      "source_location": "L210",
+      "weight": 1.0,
+      "context": "parameter_type",
+      "source": "src_fluxipc_conn_conn_idle_wait_ms",
+      "target": "src_fluxipc_conn_c_fluxipc_ctx_t",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "src/fluxipc_conn.c",
       "source_location": "L172",
       "weight": 1.0,
       "context": "parameter_type",
@@ -9821,6 +10029,17 @@
       "confidence_score": 1.0,
       "source": "src_fluxipc_conn_conn_read",
       "target": "src_fluxipc_conn_c_fluxipc_ctx_t"
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "src/fluxipc_conn.c",
+      "source_location": "L228",
+      "weight": 1.0,
+      "context": "parameter_type",
+      "source": "src_fluxipc_conn_conn_sweep_idle",
+      "target": "src_fluxipc_conn_c_fluxipc_ctx_t",
+      "confidence_score": 1.0
     },
     {
       "relation": "references",
@@ -9924,12 +10143,45 @@
     {
       "relation": "calls",
       "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "src/fluxipc_conn.c",
+      "source_location": "L270",
+      "weight": 1.0,
+      "source": "src_fluxipc_conn_conn_poll",
+      "target": "src_fluxipc_conn_conn_idle_wait_ms",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "src/fluxipc_conn.c",
+      "source_location": "L286",
+      "weight": 1.0,
+      "source": "src_fluxipc_conn_conn_poll",
+      "target": "src_fluxipc_conn_conn_sweep_idle",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "src/fluxipc_core.c",
       "source_location": "L400",
       "weight": 1.0,
       "source": "src_fluxipc_core_fluxipc_poll",
+      "target": "src_fluxipc_conn_conn_poll"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "tests/unit/test_conn.c",
+      "source_location": "L320",
+      "weight": 1.0,
+      "source": "unit_test_conn_test_idle_timeout",
       "target": "src_fluxipc_conn_conn_poll"
     },
     {
@@ -9952,6 +10204,17 @@
       "source_location": "L41",
       "weight": 1.0,
       "source": "unit_test_conn_test_conn_slot_accessor",
+      "target": "src_fluxipc_conn_fluxipc_ut_conn"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "tests/unit/test_conn.c",
+      "source_location": "L317",
+      "weight": 1.0,
+      "source": "unit_test_conn_test_idle_timeout",
       "target": "src_fluxipc_conn_fluxipc_ut_conn"
     },
     {
@@ -10008,6 +10271,17 @@
       "weight": 1.0,
       "source": "unit_test_conn_test_write_to_closed_peer",
       "target": "src_fluxipc_conn_fluxipc_ut_conn"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "tests/unit/test_conn.c",
+      "source_location": "L314",
+      "weight": 1.0,
+      "source": "unit_test_conn_test_idle_timeout",
+      "target": "src_fluxipc_conn_fluxipc_ut_conn_alloc"
     },
     {
       "relation": "calls",
@@ -11573,6 +11847,17 @@
       "target": "src_fluxipc_core_fluxipc_tree_root"
     },
     {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "tests/unit/test_sock.c",
+      "source_location": "L241",
+      "weight": 1.0,
+      "source": "unit_test_sock_test_process_path_nul",
+      "target": "src_fluxipc_core_fluxipc_tree_root"
+    },
+    {
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "src/fluxipc_core.c",
@@ -12670,6 +12955,17 @@
       "source_location": "L129",
       "weight": 1.0,
       "source": "unit_test_sock_test_process_list",
+      "target": "src_fluxipc_core_fluxipc_node_leaf"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "tests/unit/test_sock.c",
+      "source_location": "L241",
+      "weight": 1.0,
+      "source": "unit_test_sock_test_process_path_nul",
       "target": "src_fluxipc_core_fluxipc_node_leaf"
     },
     {
@@ -14456,6 +14752,16 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "src/fluxipc_http.c",
+      "source_location": "L494",
+      "weight": 1.0,
+      "source": "src_fluxipc_http",
+      "target": "src_fluxipc_http_parse_request_line",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "src/fluxipc_http.c",
       "source_location": "L206",
       "weight": 1.0,
       "confidence_score": 1.0,
@@ -14995,6 +15301,17 @@
       "confidence_score": 1.0,
       "source": "src_fluxipc_http_http_conn_process",
       "target": "src_fluxipc_http_c_fluxipc_ctx_t"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "src/fluxipc_http.c",
+      "source_location": "L572",
+      "weight": 1.0,
+      "source": "src_fluxipc_http_http_conn_process",
+      "target": "src_fluxipc_http_parse_request_line",
+      "confidence_score": 1.0
     },
     {
       "relation": "calls",
@@ -17205,9 +17522,9 @@
       "source_file": "src/fluxipc_sock.c",
       "source_location": "L256",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "src_fluxipc_sock",
-      "target": "src_fluxipc_sock_send_iov_all",
-      "confidence_score": 1.0
+      "target": "src_fluxipc_sock_send_iov_all"
     },
     {
       "relation": "contains",
@@ -17545,13 +17862,24 @@
     {
       "relation": "calls",
       "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "tests/unit/test_sock.c",
+      "source_location": "L254",
+      "weight": 1.0,
+      "source": "unit_test_sock_test_process_path_nul",
+      "target": "src_fluxipc_sock_sock_conn_process"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "src/fluxipc_sock.c",
       "source_location": "L324",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "src_fluxipc_sock_client_send_request",
-      "target": "src_fluxipc_sock_send_iov_all",
-      "confidence_score": 1.0
+      "target": "src_fluxipc_sock_send_iov_all"
     },
     {
       "relation": "calls",
@@ -18044,9 +18372,9 @@
       "source_file": "src/fluxipc_tree.c",
       "source_location": "L144",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "src_fluxipc_tree",
-      "target": "src_fluxipc_tree_tree_find_child_n",
-      "confidence_score": 1.0
+      "target": "src_fluxipc_tree_tree_find_child_n"
     },
     {
       "relation": "contains",
@@ -18203,9 +18531,9 @@
       "source_location": "L144",
       "weight": 1.0,
       "context": "parameter_type",
+      "confidence_score": 1.0,
       "source": "src_fluxipc_tree_tree_find_child_n",
-      "target": "src_fluxipc_tree_c_fluxipc_node_t",
-      "confidence_score": 1.0
+      "target": "src_fluxipc_tree_c_fluxipc_node_t"
     },
     {
       "relation": "references",
@@ -18445,9 +18773,9 @@
       "source_file": "src/fluxipc_tree.c",
       "source_location": "L156",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "src_fluxipc_tree_tree_find_child",
-      "target": "src_fluxipc_tree_tree_find_child_n",
-      "confidence_score": 1.0
+      "target": "src_fluxipc_tree_tree_find_child_n"
     },
     {
       "relation": "calls",
@@ -18456,9 +18784,9 @@
       "source_file": "src/fluxipc_tree.c",
       "source_location": "L173",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "src_fluxipc_tree_tree_find_path",
-      "target": "src_fluxipc_tree_tree_find_child_n",
-      "confidence_score": 1.0
+      "target": "src_fluxipc_tree_tree_find_child_n"
     },
     {
       "relation": "calls",
@@ -19312,6 +19640,17 @@
       "source_location": "L220",
       "weight": 1.0,
       "source": "unit_test_util_test_content_length_absent",
+      "target": "src_fluxipc_util_fluxipc_find_content_length"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "tests/unit/test_util.c",
+      "source_location": "L473",
+      "weight": 1.0,
+      "source": "unit_test_util_test_content_length_invalid",
       "target": "src_fluxipc_util_fluxipc_find_content_length"
     },
     {
@@ -23009,6 +23348,16 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "tests/unit/test_conn.c",
+      "source_location": "L306",
+      "weight": 1.0,
+      "source": "unit_test_conn",
+      "target": "unit_test_conn_test_idle_timeout",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/unit/test_conn.c",
       "source_location": "L280",
       "weight": 1.0,
       "confidence_score": 1.0,
@@ -23187,6 +23536,28 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "tests/unit/test_conn.c",
+      "source_location": "L324",
+      "weight": 1.0,
+      "source": "unit_test_conn_test_idle_timeout",
+      "target": "unit_ut_common_ut_server_down"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "tests/unit/test_conn.c",
+      "source_location": "L309",
+      "weight": 1.0,
+      "source": "unit_test_conn_test_idle_timeout",
+      "target": "unit_ut_common_ut_server_up"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "tests/unit/test_conn.c",
       "source_location": "L294",
       "weight": 1.0,
       "source": "unit_test_conn_test_poll_no_descriptors",
@@ -23330,9 +23701,9 @@
       "source_file": "tests/unit/test_core.c",
       "source_location": "L198",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "unit_test_core",
-      "target": "unit_test_core_stop_after_delay",
-      "confidence_score": 1.0
+      "target": "unit_test_core_stop_after_delay"
     },
     {
       "relation": "contains",
@@ -24387,6 +24758,16 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "tests/unit/test_http.c",
+      "source_location": "L568",
+      "weight": 1.0,
+      "source": "unit_test_http",
+      "target": "unit_test_http_test_invalid_content_length",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/unit/test_http.c",
       "source_location": "L195",
       "weight": 1.0,
       "confidence_score": 1.0,
@@ -24462,6 +24843,16 @@
       "confidence_score": 1.0,
       "source": "unit_test_http",
       "target": "unit_test_http_test_status_reasons"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/unit/test_http.c",
+      "source_location": "L548",
+      "weight": 1.0,
+      "source": "unit_test_http",
+      "target": "unit_test_http_test_target_too_long",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -24728,6 +25119,17 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "tests/unit/test_http.c",
+      "source_location": "L572",
+      "weight": 1.0,
+      "source": "unit_test_http_test_invalid_content_length",
+      "target": "unit_test_http_do_http",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/unit/test_http.c",
       "source_location": "L211",
       "weight": 1.0,
       "confidence_score": 1.0,
@@ -24810,6 +25212,17 @@
       "confidence_score": 1.0,
       "source": "unit_test_http_test_status_reasons",
       "target": "unit_test_http_do_http"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/unit/test_http.c",
+      "source_location": "L562",
+      "weight": 1.0,
+      "source": "unit_test_http_test_target_too_long",
+      "target": "unit_test_http_do_http",
+      "confidence_score": 1.0
     },
     {
       "relation": "calls",
@@ -25025,6 +25438,17 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "tests/unit/test_http.c",
+      "source_location": "L575",
+      "weight": 1.0,
+      "source": "unit_test_http_test_invalid_content_length",
+      "target": "unit_test_http_resp_status",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/unit/test_http.c",
       "source_location": "L212",
       "weight": 1.0,
       "confidence_score": 1.0,
@@ -25096,6 +25520,17 @@
       "confidence_score": 1.0,
       "source": "unit_test_http_test_status_reasons",
       "target": "unit_test_http_resp_status"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/unit/test_http.c",
+      "source_location": "L563",
+      "weight": 1.0,
+      "source": "unit_test_http_test_target_too_long",
+      "target": "unit_test_http_resp_status",
+      "confidence_score": 1.0
     },
     {
       "relation": "calls",
@@ -25678,6 +26113,28 @@
       "source_location": "L515",
       "weight": 1.0,
       "source": "unit_test_http_test_header_too_large",
+      "target": "unit_ut_common_ut_conn_free"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "tests/unit/test_http.c",
+      "source_location": "L564",
+      "weight": 1.0,
+      "source": "unit_test_http_test_target_too_long",
+      "target": "unit_ut_common_ut_conn_free"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "tests/unit/test_http.c",
+      "source_location": "L576",
+      "weight": 1.0,
+      "source": "unit_test_http_test_invalid_content_length",
       "target": "unit_ut_common_ut_conn_free"
     },
     {
@@ -27173,6 +27630,16 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "tests/unit/test_sock.c",
+      "source_location": "L237",
+      "weight": 1.0,
+      "source": "unit_test_sock",
+      "target": "unit_test_sock_test_process_path_nul",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/unit/test_sock.c",
       "source_location": "L454",
       "weight": 1.0,
       "confidence_score": 1.0,
@@ -27452,6 +27919,28 @@
       "confidence_score": 1.0,
       "source": "unit_test_sock_test_process_args_multiple",
       "target": "unit_test_sock_build_call_raw"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "tests/unit/test_sock.c",
+      "source_location": "L255",
+      "weight": 1.0,
+      "source": "unit_test_sock_test_process_path_nul",
+      "target": "unit_ut_common_ut_conn_free"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "tests/unit/test_sock.c",
+      "source_location": "L253",
+      "weight": 1.0,
+      "source": "unit_test_sock_test_process_path_nul",
+      "target": "unit_ut_common_ut_conn_init"
     },
     {
       "relation": "calls",
@@ -27754,9 +28243,9 @@
       "source_file": "tests/unit/test_tree.c",
       "source_location": "L213",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "unit_test_tree",
-      "target": "unit_test_tree_test_deep_path_walk",
-      "confidence_score": 1.0
+      "target": "unit_test_tree_test_deep_path_walk"
     },
     {
       "relation": "contains",
@@ -27906,9 +28395,9 @@
       "source_file": "tests/unit/test_tree.c",
       "source_location": "L217",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "unit_test_tree_test_deep_path_walk",
-      "target": "unit_test_tree_make_root",
-      "confidence_score": 1.0
+      "target": "unit_test_tree_make_root"
     },
     {
       "relation": "calls",
@@ -28083,6 +28572,16 @@
       "confidence_score": 1.0,
       "source": "unit_test_util",
       "target": "unit_test_util_test_content_length_absent"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/unit/test_util.c",
+      "source_location": "L460",
+      "weight": 1.0,
+      "source": "unit_test_util",
+      "target": "unit_test_util_test_content_length_invalid",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -28284,6 +28783,17 @@
       "confidence_score": 1.0,
       "source": "unit_test_util_test_content_length_absent",
       "target": "unit_test_util_hbytes_of"
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/unit/test_util.c",
+      "source_location": "L473",
+      "weight": 1.0,
+      "source": "unit_test_util_test_content_length_invalid",
+      "target": "unit_test_util_hbytes_of",
+      "confidence_score": 1.0
     },
     {
       "relation": "calls",
@@ -30224,5 +30734,5 @@
       "source_file": "FluxIPC_CSDN.md"
     }
   ],
-  "built_at_commit": "134650dc258e5fd86b3bca742de0c1dc3c0b0c82"
+  "built_at_commit": "71412cd9b471533334354e851db8f86bb81d1545"
 }
