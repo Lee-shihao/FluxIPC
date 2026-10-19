@@ -400,17 +400,16 @@ static void route_request(fluxipc_ctx_t *ctx, http_buf_t *out,
     }
 
     /* leaf */
-    char allow[128];
-    build_allow(node->method.methods, 1, allow, sizeof(allow));
-
     if (strcmp(method, "OPTIONS") == 0) {
-        char extra[160];
+        char allow[128], extra[160];
+        build_allow(node->method.methods, 1, allow, sizeof(allow));
         snprintf(extra, sizeof(extra), "Allow: %s\r\n", allow);
         build_response(out, 204, "application/json", NULL, 0, 1, extra);
         return;
     }
     if (want == 0 || !(node->method.methods & want)) {
-        char extra[160];
+        char allow[128], extra[160];
+        build_allow(node->method.methods, 1, allow, sizeof(allow));
         snprintf(extra, sizeof(extra), "Allow: %s\r\n", allow);
         send_problem(out, 405, "Method Not Allowed",
                      "method not allowed for this endpoint", path, head_only,
