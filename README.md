@@ -479,12 +479,15 @@ make tools      # download+extract Mull 0.34.1, cmocka 1.1.5, lcov into .tools/
 
 | Command | What it does |
 |---------|--------------|
-| `make ut` | **cmocka** unit suite → `fluxipc-ut` (170 cases) |
+| `make ut` | **cmocka** unit suite → `fluxipc-ut` (191 cases) |
 | `make it` | end-to-end suite → `fluxipc-it` (forks `example_server`) |
 | `make test` | `ut` + `it` |
 | `make cov` | instrumented build + text & HTML coverage report, line/branch gates |
 | `make mutate` | **Mull** mutation testing with a mutation-score gate |
-| `make ut-asan` | AddressSanitizer + UBSan build (leak-checked) |
+| `make ut-asan` | AddressSanitizer + UBSan unit build (leak-checked) |
+| `make it-asan` | instrumented server + integration suite; LeakSanitizer checks the real server lifecycle |
+| `make test-mem` | `ut-asan` + `it-asan` |
+| `make bench` | latency/throughput baseline: p50/p95/p99, ops/s, server RSS |
 
 Tunable knobs (env vars):
 
@@ -496,10 +499,23 @@ COV_LINE_MIN=90  COV_BRANCH_MIN=78  MUT_SCORE_MIN=70  MUT_WORKERS=4
 
 | Gate | Target | Actual |
 |------|--------|--------|
-| Line coverage (`src/`) | ≥ 90% | **95.8%** |
-| Branch coverage (`src/`) | ≥ 78% | **79.1%** |
+| Line coverage (`src/`) | ≥ 90% | **95.0%** |
+| Branch coverage (`src/`) | ≥ 78% | **78.0%** |
 | Mutation score | > 70% | **78%** |
-| ASan + UBSan | clean | clean |
+| ASan + UBSan (unit) | clean | clean |
+| ASan + UBSan + LSan (integration) | clean | clean |
+
+`make it` covers IPC, local JSON (`fluxipc_call_json`), HTTP, malformed
+protocol/HTTP input, concurrency, 32 KiB payloads and a coarse server-RSS
+growth check.  `make bench` prints:
+
+| Metric | Meaning |
+|--------|---------|
+| `ops/s` | throughput |
+| `p50/p95/p99` | tail latency |
+| `mean/max` | average / worst case |
+| `errors` | failed requests (must be 0) |
+| server RSS | before/after all workloads |
 
 `make cov` prints two text tables (line and branch, with the uncovered
 line/branch numbers) and also writes `build/coverage/index.html`,
@@ -526,9 +542,11 @@ an in-memory `fluxipc_conn_t`, and `fluxipc_interactive.c` / `fluxipc_cli.c` are
 
 ### Integration tests (`tests/integration/`)
 
-Forks `example_server` and exercises both transports end-to-end: IPC calls
-(with arguments and error propagation), `OP_LIST` discovery, HTTP
-200/404/405/`problem+json`, and the connect-immediately-after-start regression.
+Forks `example_server` and exercises the public surface end-to-end: raw IPC,
+local JSON (`fluxipc_call_json`) with positional/query/body forms, HTTP methods
+and error mapping, malformed IPC/HTTP input, 32 KiB payloads, concurrent mixed
+workloads, server RSS growth, and graceful shutdown.  See
+`tests/UNIT_TEST_PLAN.md` for the full matrix.
 
 ### Python client tests
 
@@ -612,6 +630,7 @@ FluxIPC/
 │   │   ├── test.h / ut_common.*   # shared fixtures & helpers
 │   │   └── test_{protocol,util,tree,core,sock,conn,http,interactive,cli}.c
 │   ├── integration/           # End-to-end tests (fluxipc-it)
+│   ├── bench/bench.c          # Latency/throughput/RSS baseline (fluxipc-bench)
 │   ├── tools/                 # bootstrap.sh, coverage.sh, mutate.sh, env.sh
 │   └── UNIT_TEST_PLAN.md      # test strategy & metrics
 ├── python/

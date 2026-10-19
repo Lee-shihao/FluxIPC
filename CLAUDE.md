@@ -39,7 +39,10 @@ fluxipc-cli --server example_server /system/info  # terminal 2
 # Tests
 make test          # unit tests + integration tests
 make ut            # unit tests only (pure, no server/network)
-make it            # integration tests (forks example_server, IPC + HTTP)
+make it            # integration tests (forks example_server, IPC + JSON + HTTP)
+make test-mem      # ASan/UBSan unit + instrumented integration/leak checks
+make it-asan       # instrumented server + integration suite (LeakSanitizer)
+make bench         # latency/throughput baseline (p50/p95/p99, ops/s, RSS)
 
 # Python HTTP integration tests (requires example_server running on the target)
 python3 python/test_http.py

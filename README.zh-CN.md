@@ -444,12 +444,15 @@ make tools      # 下载并解包 Mull 0.34.1、cmocka 1.1.5、lcov 到 .tools/
 
 | 命令 | 作用 |
 |------|------|
-| `make ut` | **cmocka** 单元套件 → `fluxipc-ut`（170 个用例） |
+| `make ut` | **cmocka** 单元套件 → `fluxipc-ut`（191 个用例） |
 | `make it` | 端到端套件 → `fluxipc-it`（fork `example_server`） |
 | `make test` | `ut` + `it` |
 | `make cov` | 插桩构建 + 文本 & HTML 覆盖率报告，含行/分支门禁 |
 | `make mutate` | **Mull** 变异测试，含变异分数门禁 |
-| `make ut-asan` | AddressSanitizer + UBSan 构建（含泄漏检测） |
+| `make ut-asan` | AddressSanitizer + UBSan 单元构建（含泄漏检测） |
+| `make it-asan` | 服务端与集成套件均插桩，LeakSanitizer 检查真实服务端生命周期 |
+| `make test-mem` | `ut-asan` + `it-asan` |
+| `make bench` | 延迟/吞吐基线：p50/p95/p99、ops/s、服务端 RSS |
 
 可调参数（环境变量）：
 
@@ -461,10 +464,22 @@ COV_LINE_MIN=90  COV_BRANCH_MIN=78  MUT_SCORE_MIN=70  MUT_WORKERS=4
 
 | 门禁 | 目标 | 实测 |
 |------|------|------|
-| 行覆盖率（`src/`） | ≥ 90% | **95.8%** |
-| 分支覆盖率（`src/`） | ≥ 78% | **79.1%** |
+| 行覆盖率（`src/`） | ≥ 90% | **95.0%** |
+| 分支覆盖率（`src/`） | ≥ 78% | **78.0%** |
 | 变异分数 | > 70% | **78%** |
-| ASan + UBSan | 干净 | 干净 |
+| ASan + UBSan（单元） | 干净 | 干净 |
+| ASan + UBSan + LSan（集成） | 干净 | 干净 |
+
+`make it` 覆盖 IPC、本地 JSON（`fluxipc_call_json`）、HTTP、畸形协议/HTTP
+输入、并发、32 KiB 负载，以及服务端 RSS 增长粗检。`make bench` 输出：
+
+| 指标 | 含义 |
+|------|------|
+| `ops/s` | 吞吐量 |
+| `p50/p95/p99` | 尾延迟 |
+| `mean/max` | 平均 / 最差 |
+| `errors` | 失败请求数（必须为 0） |
+| server RSS | 全部负载前后的服务端常驻内存 |
 
 `make cov` 会打印两张文本表（行覆盖与分支覆盖，含未覆盖的行/分支号），同时
 写出 `build/coverage/index.html`、`cobertura.xml` 与 `summary.json`。
@@ -490,8 +505,10 @@ COV_LINE_MIN=90  COV_BRANCH_MIN=78  MUT_SCORE_MIN=70  MUT_WORKERS=4
 
 ### 集成测试（`tests/integration/`）
 
-fork `example_server`，端到端地验证两种传输：IPC 调用（含参数与错误传播）、
-`OP_LIST` 发现、HTTP 200/404/405/`problem+json`，以及“启动后立即连接”的回归。
+fork `example_server`，端到端验证公开接口：原始 IPC、本地 JSON
+（`fluxipc_call_json` 的位置/query/body 形式）、HTTP 方法与错误映射、畸形
+IPC/HTTP 输入、32 KiB 负载、并发混合负载、服务端 RSS 增长，以及优雅关闭。
+完整矩阵见 `tests/UNIT_TEST_PLAN.md`。
 
 ### Python 客户端测试
 
@@ -575,6 +592,7 @@ FluxIPC/
 │   │   ├── test.h / ut_common.*   # 共享 fixture 与辅助
 │   │   └── test_{protocol,util,tree,core,sock,conn,http,interactive,cli}.c
 │   ├── integration/           # 端到端测试 (fluxipc-it)
+│   ├── bench/bench.c          # 延迟/吞吐/RSS 基线 (fluxipc-bench)
 │   ├── tools/                 # bootstrap.sh、coverage.sh、mutate.sh、env.sh
 │   └── UNIT_TEST_PLAN.md      # 测试策略与指标
 ├── python/

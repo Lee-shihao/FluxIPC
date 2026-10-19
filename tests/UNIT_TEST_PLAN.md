@@ -12,9 +12,9 @@
 
 | 指标 | 门槛 | 实测 | 结果 |
 |------|------|------|------|
-| 单元用例 | — | **170 个**，全部通过（约 0.6s） | ✅ |
-| 行覆盖率（src/） | ≥ 90% | **95.7%** | ✅ |
-| 分支覆盖率（src/） | ≥ 78% | **78.2%** | ✅ |
+| 单元用例 | — | **191 个**，全部通过 | ✅ |
+| 行覆盖率（src/） | ≥ 90% | **95.0%** | ✅ |
+| 分支覆盖率（src/） | ≥ 78% | **78.0%** | ✅ |
 | 变异分数 | **> 70%** | **75–76%**（`MUT_SCORE_MIN` 默认 70） | ✅ |
 | ASan + UBSan | 无错误/无泄漏 | 干净 | ✅ |
 
@@ -71,7 +71,8 @@ tests/
     test_http.c        HTTP 解析 / 路由 / 响应 / OpenAPI
     test_interactive.c 白盒：include ../../src/fluxipc_interactive.c
     test_cli.c         白盒：include ../../cli/fluxipc_cli.c
-  integration/main.c   端到端（fork example_server，IPC + HTTP）
+  integration/main.c   端到端（fork example_server，IPC/JSON/HTTP + 健壮性）
+  bench/bench.c       延迟/吞吐/RSS 基线（fluxipc-bench）
   tools/
     bootstrap.sh        安装工具链
     env.sh              PATH / LD_LIBRARY_PATH
@@ -90,8 +91,8 @@ tests/
 | L0 纯函数 | 直接调用 | util / tree / mask / manifest |
 | L1 处理器白盒 | 内存 `fluxipc_conn_t` 直接驱动 `sock_conn_process` / `http_conn_process` | 协议解析、路由、响应构造（无网络、确定） |
 | L2 组件 | 真实 Unix socket + 事件循环 pump 线程 | 客户端、连接状态机 |
-| L3 端到端 | fork `example_server` | IPC + HTTP 全链路 |
-| L4 健壮性 | ASan/UBSan、假服务器（坏 magic / 截断 / RST）、边界输入 | 错误分支 |
+| L3 端到端 | fork `example_server` | IPC、本地 JSON、HTTP 全链路、并发、大负载、RSS |
+| L4 健壮性 | ASan/UBSan/LSan、假服务器、真实 socket 畸形协议、畸形 HTTP | 错误分支 / 内存安全 |
 
 ### 4.2 cmocka 用法
 
@@ -132,7 +133,10 @@ make it           # 端到端集成测试（fork example_server）
 make test         # ut + it
 make cov          # 插桩构建 + 跑 ut/it + gcovr 报告，行/分支阈值门禁
 make mutate       # Mull 变异测试 + 分数门禁
-make ut-asan      # AddressSanitizer + UBSan（含泄漏检测）
+make ut-asan      # AddressSanitizer + UBSan（含泄漏检测，单元层）
+make it-asan      # 服务端 + 集成套件均插桩，LeakSanitizer 检查真实生命周期
+make test-mem     # ut-asan + it-asan
+make bench        # 性能基线：p50/p95/p99、ops/s、服务端 RSS
 ```
 
 可调参数：
@@ -142,7 +146,37 @@ COV_LINE_MIN=90 COV_BRANCH_MIN=78
 MUT_SCORE_MIN=70 MUT_WORKERS=4
 ```
 
-产物：`build/coverage/`（HTML/XML/summary）、`build/mutation/`。
+产物：`build/coverage/`（HTML/XML/summary）、`build/mutation/`、
+`build/asan/`（集成 ASan 二进制）。
+
+### 5.1 集成套件覆盖（`make it`）
+
+- IPC 原始调用、参数、错误码、`FLUXIPC_STATIC`、`OP_LIST`
+- 本地 JSON：无参 / 位置参数 / query / JSON body / handler 错误 /
+  无 JSON handler / 非法 JSON / 无 schema 位置参数
+- 32 KiB JSON body（IPC + HTTP）
+- HTTP：GET/PUT/HEAD/OPTIONS/405/404/501、问题响应、OpenAPI、manifest
+- 畸形 HTTP：非法请求行、超长 header（431）、超长 body（413）
+- 真实 socket 畸形 IPC：坏 magic、未知 op、超长 path、缺少 NUL、截断 header
+- 4 线程混合 IPC + JSON + HTTP 并发
+- 1000 次 JSON IPC + 100 次 HTTP 后的服务端 RSS 增长粗检
+- 优雅 shutdown（`/system/shutdown`），让 LeakSanitizer 能检查服务端退出路径
+
+### 5.2 性能基线（`make bench`）
+
+`tests/bench/bench.c` 自启动 `example_server`，输出：
+
+| 指标 | 说明 |
+|------|------|
+| `ops/s` | 吞吐量 |
+| `p50/p95/p99/mean/max` | 延迟分布 |
+| `errors` | 失败数（门禁为 0） |
+| server RSS | 全部负载前后的常驻内存 |
+
+覆盖顺序 IPC、顺序 JSON IPC、位置参数 JSON IPC、顺序 HTTP、4 线程并行 IPC、4 线程并行 HTTP。
+可用 `BENCH_IPC_ITERS` / `BENCH_HTTP_ITERS` / `BENCH_THREADS` 调整规模；
+可选的性能门禁：`BENCH_MIN_IPC_OPS`、`BENCH_MIN_HTTP_OPS`、
+`BENCH_MAX_P99_MS`。
 
 ---
 
