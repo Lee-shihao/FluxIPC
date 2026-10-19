@@ -328,13 +328,8 @@ static void route_request(fluxipc_ctx_t *ctx, http_buf_t *out,
     const char *qraw = qmark ? qmark + 1 : NULL;
     size_t qlen = qraw ? strlen(qraw) : 0;
 
-    char raw_path[2048];
-    if (path_len >= sizeof(raw_path)) path_len = sizeof(raw_path) - 1;
-    memcpy(raw_path, target, path_len);
-    raw_path[path_len] = '\0';
-
     char path[2048];
-    fluxipc_url_decode(raw_path, path_len, path, sizeof(path));
+    fluxipc_url_decode(target, path_len, path, sizeof(path));
 
     size_t pl = strlen(path);
     while (pl > 1 && path[pl - 1] == '/') path[--pl] = '\0';
