@@ -303,6 +303,30 @@ static void test_write_partial_then_drain(void **state)
 
 /* ── poll with no descriptors ────────────────────────────────────────────── */
 
+static void test_idle_timeout(void **state)
+{
+    (void)state;
+    ut_server_up();
+    conn_pool_init();
+
+    int fds[2];
+    assert_int_equal(socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+    int idx = fluxipc_ut_conn_alloc(fds[0], FLUXIPC_CONN_UNIX);
+    assert_true(idx >= 0);
+
+    fluxipc_conn_t *c = fluxipc_ut_conn(idx);
+    c->last_active_ms = 1;       /* far older than the monotonic clock */
+
+    int rc = conn_poll(g_ctx);   /* immediate idle deadline */
+    int closed = (c->fd == -1);
+
+    close(fds[1]);
+    ut_server_down();
+
+    assert_int_equal(rc, 0);
+    assert_true(closed);
+}
+
 static void test_poll_no_descriptors(void **state)
 {
     (void)state;
@@ -340,6 +364,7 @@ int ut_conn(void)
         cmocka_unit_test(test_read_grows_request_buffer),
         cmocka_unit_test(test_write_to_closed_peer),
         cmocka_unit_test(test_write_partial_then_drain),
+        cmocka_unit_test(test_idle_timeout),
         cmocka_unit_test(test_poll_no_descriptors),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);

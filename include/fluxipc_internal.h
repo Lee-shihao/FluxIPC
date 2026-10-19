@@ -114,6 +114,7 @@ extern fluxipc_ctx_t *g_ctx;
 /* ─── Unified connection layer (fluxipc_conn.c) ───────────────────────────── */
 #define FLUXIPC_MAX_CONNS   32
 #define FLUXIPC_RBUF_MAX    (512 * 1024)   /* max request bytes per conn */
+#define FLUXIPC_IDLE_TIMEOUT_MS 30000      /* slowloris / idle connection cap */
 
 typedef enum { FLUXIPC_CONN_UNIX = 0, FLUXIPC_CONN_HTTP } fluxipc_conn_kind_t;
 typedef enum { FLUXIPC_CONN_READING = 0, FLUXIPC_CONN_WRITING } fluxipc_conn_state_t;
@@ -121,6 +122,7 @@ typedef enum { FLUXIPC_CONN_READING = 0, FLUXIPC_CONN_WRITING } fluxipc_conn_sta
 typedef struct fluxipc_conn {
     int                  fd;
     fluxipc_conn_kind_t  kind;
+    uint64_t             last_active_ms;
     fluxipc_conn_state_t state;
 
     char   *rbuf; size_t rlen, rcap;   /* request accumulation  */
