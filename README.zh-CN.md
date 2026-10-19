@@ -444,7 +444,7 @@ make tools      # 下载并解包 Mull 0.34.1、cmocka 1.1.5、lcov 到 .tools/
 
 | 命令 | 作用 |
 |------|------|
-| `make ut` | **cmocka** 单元套件 → `fluxipc-ut`（191 个用例） |
+| `make ut` | **cmocka** 单元套件 → `fluxipc-ut`（196 个用例） |
 | `make it` | 端到端套件 → `fluxipc-it`（fork `example_server`） |
 | `make test` | `ut` + `it` |
 | `make cov` | 插桩构建 + 文本 & HTML 覆盖率报告，含行/分支门禁 |
@@ -464,8 +464,8 @@ COV_LINE_MIN=90  COV_BRANCH_MIN=78  MUT_SCORE_MIN=70  MUT_WORKERS=4
 
 | 门禁 | 目标 | 实测 |
 |------|------|------|
-| 行覆盖率（`src/`） | ≥ 90% | **95.7%** |
-| 分支覆盖率（`src/`） | ≥ 78% | **78.7%** |
+| 行覆盖率（`src/`） | ≥ 90% | **95.9%** |
+| 分支覆盖率（`src/`） | ≥ 78% | **78.8%** |
 | 变异分数 | > 70% | **78%** |
 | ASan + UBSan（单元） | 干净 | 干净 |
 | ASan + UBSan + LSan（集成） | 干净 | 干净 |

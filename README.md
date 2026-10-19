@@ -479,7 +479,7 @@ make tools      # download+extract Mull 0.34.1, cmocka 1.1.5, lcov into .tools/
 
 | Command | What it does |
 |---------|--------------|
-| `make ut` | **cmocka** unit suite → `fluxipc-ut` (191 cases) |
+| `make ut` | **cmocka** unit suite → `fluxipc-ut` (196 cases) |
 | `make it` | end-to-end suite → `fluxipc-it` (forks `example_server`) |
 | `make test` | `ut` + `it` |
 | `make cov` | instrumented build + text & HTML coverage report, line/branch gates |
@@ -499,8 +499,8 @@ COV_LINE_MIN=90  COV_BRANCH_MIN=78  MUT_SCORE_MIN=70  MUT_WORKERS=4
 
 | Gate | Target | Actual |
 |------|--------|--------|
-| Line coverage (`src/`) | ≥ 90% | **95.7%** |
-| Branch coverage (`src/`) | ≥ 78% | **78.7%** |
+| Line coverage (`src/`) | ≥ 90% | **95.9%** |
+| Branch coverage (`src/`) | ≥ 78% | **78.8%** |
 | Mutation score | > 70% | **78%** |
 | ASan + UBSan (unit) | clean | clean |
 | ASan + UBSan + LSan (integration) | clean | clean |
