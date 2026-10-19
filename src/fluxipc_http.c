@@ -511,7 +511,11 @@ int http_conn_process(fluxipc_ctx_t *ctx, fluxipc_conn_t *c)
             return respond_problem(c, 431, "Request Header Fields Too Large",
                                    "header section exceeds limit", NULL);
 
-        size_t content_length = fluxipc_find_content_length(c->rbuf, hbytes);
+        size_t content_length = 0;
+        int cl = fluxipc_find_content_length(c->rbuf, hbytes, &content_length);
+        if (cl < 0)
+            return respond_problem(c, 400, "Bad Request",
+                                   "invalid Content-Length", NULL);
         if (content_length > HTTP_BODY_MAX)
             return respond_problem(c, 413, "Content Too Large",
                                    "request body exceeds limit", NULL);

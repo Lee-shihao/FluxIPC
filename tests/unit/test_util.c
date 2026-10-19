@@ -206,30 +206,34 @@ static void test_content_length_present(void **state)
     (void)state;
     const char *h1 =
         "POST /x HTTP/1.1\r\nHost: h\r\nContent-Length: 42\r\n\r\n";
-    assert_int_equal(fluxipc_find_content_length(h1, hbytes_of(h1)), 42);
+    size_t n = 0;
+    assert_int_equal(fluxipc_find_content_length(h1, hbytes_of(h1), &n), 1);
+    assert_int_equal(n, 42);
 
-    /* case-insensitive, leading spaces, tabs, trailing junk */
+    /* case-insensitive, leading spaces, tabs */
     const char *h2 =
-        "POST /x HTTP/1.1\r\ncontent-length:\t 7x\r\n\r\n";
-    assert_int_equal(fluxipc_find_content_length(h2, hbytes_of(h2)), 7);
+        "POST /x HTTP/1.1\r\ncontent-length:\t 7\r\n\r\n";
+    assert_int_equal(fluxipc_find_content_length(h2, hbytes_of(h2), &n), 1);
+    assert_int_equal(n, 7);
 }
 
 static void test_content_length_absent(void **state)
 {
     (void)state;
+    size_t n = 0;
     const char *h1 = "GET / HTTP/1.1\r\nHost: h\r\n\r\n";
-    assert_int_equal(fluxipc_find_content_length(h1, hbytes_of(h1)), 0);
+    assert_int_equal(fluxipc_find_content_length(h1, hbytes_of(h1), &n), 0);
 
     /* no CRLF at all */
     const char *h2 = "GET / HTTP/1.1";
-    assert_int_equal(fluxipc_find_content_length(h2, strlen(h2)), 0);
+    assert_int_equal(fluxipc_find_content_length(h2, strlen(h2), &n), 0);
 
     /* hbytes == 0 */
-    assert_int_equal(fluxipc_find_content_length("garbage", 0), 0);
+    assert_int_equal(fluxipc_find_content_length("garbage", 0, &n), 0);
 
     /* header name that merely starts with the same prefix */
     const char *h3 = "GET / HTTP/1.1\r\nX-Content-Length: 9\r\n\r\n";
-    assert_int_equal(fluxipc_find_content_length(h3, hbytes_of(h3)), 0);
+    assert_int_equal(fluxipc_find_content_length(h3, hbytes_of(h3), &n), 0);
 }
 
 static void test_content_length_no_mutation(void **state)
@@ -240,7 +244,9 @@ static void test_content_length_no_mutation(void **state)
     char copy[128];
     strcpy(copy, h1);
     size_t hb = hbytes_of(copy);
-    assert_int_equal(fluxipc_find_content_length(copy, hb), 42);
+    size_t n = 0;
+    assert_int_equal(fluxipc_find_content_length(copy, hb, &n), 1);
+    assert_int_equal(n, 42);
     assert_string_equal(copy, h1);   /* unchanged */
 }
 
@@ -291,12 +297,16 @@ static void test_url_decode_loop_sentinel(void **state)
 static void test_find_content_length_digit_boundaries(void **state)
 {
     (void)state;
+    size_t n = 0;
     const char *h1 = "POST / HTTP/1.1\r\nContent-Length: 10\r\n\r\n";
-    assert_int_equal(fluxipc_find_content_length(h1, hbytes_of(h1)), 10);
+    assert_int_equal(fluxipc_find_content_length(h1, hbytes_of(h1), &n), 1);
+    assert_int_equal(n, 10);
     const char *h2 = "POST / HTTP/1.1\r\nContent-Length: 90\r\n\r\n";
-    assert_int_equal(fluxipc_find_content_length(h2, hbytes_of(h2)), 90);
+    assert_int_equal(fluxipc_find_content_length(h2, hbytes_of(h2), &n), 1);
+    assert_int_equal(n, 90);
     const char *h3 = "POST / HTTP/1.1\r\nContent-Length: 0\r\n\r\n";
-    assert_int_equal(fluxipc_find_content_length(h3, hbytes_of(h3)), 0);
+    assert_int_equal(fluxipc_find_content_length(h3, hbytes_of(h3), &n), 1);
+    assert_int_equal(n, 0);
 }
 
 static void test_query_exact_arena(void **state)
@@ -447,6 +457,25 @@ static void test_json_error_helper(void **state)
     assert_int_equal(fluxipc_json_error(NULL, -EINVAL, "x"), -EINVAL);
 }
 
+static void test_content_length_invalid(void **state)
+{
+    (void)state;
+    size_t n = 0;
+    const char *overflow =
+        "POST / HTTP/1.1\r\nContent-Length: 999999999999999999999999999999\r\n\r\n";
+    const char *empty =
+        "POST / HTTP/1.1\r\nContent-Length:\r\n\r\n";
+    const char *junk =
+        "POST / HTTP/1.1\r\nContent-Length: 42x\r\n\r\n";
+    const char *dup =
+        "POST / HTTP/1.1\r\nContent-Length: 2\r\nContent-Length: 2\r\n\r\n";
+
+    assert_int_equal(fluxipc_find_content_length(overflow, hbytes_of(overflow), &n), -1);
+    assert_int_equal(fluxipc_find_content_length(empty, hbytes_of(empty), &n), -1);
+    assert_int_equal(fluxipc_find_content_length(junk, hbytes_of(junk), &n), -1);
+    assert_int_equal(fluxipc_find_content_length(dup, hbytes_of(dup), &n), -1);
+}
+
 int ut_util(void)
 {
     const struct CMUnitTest tests[] = {
@@ -465,6 +494,7 @@ int ut_util(void)
         cmocka_unit_test(test_url_decode_hex_boundaries),
         cmocka_unit_test(test_url_decode_loop_sentinel),
         cmocka_unit_test(test_find_content_length_digit_boundaries),
+        cmocka_unit_test(test_content_length_invalid),
         cmocka_unit_test(test_query_exact_arena),
         cmocka_unit_test(test_schema_macros),
         cmocka_unit_test(test_json_request_helpers),

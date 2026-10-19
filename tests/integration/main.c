@@ -648,6 +648,13 @@ int main(void)
         rc = http_raw(HTTP_PORT, raw, resp, sizeof(resp));
         CHECK_EQ_INT(http_status(resp), 413);
     }
+    {
+        const char *raw =
+            "POST /demo/echo HTTP/1.1\r\nHost: x\r\n"
+            "Content-Length: 2\r\nContent-Length: 2\r\n\r\n{}";
+        rc = http_raw(HTTP_PORT, raw, resp, sizeof(resp));
+        CHECK_EQ_INT(http_status(resp), 400);
+    }
 
     /* large HTTP body */
     {

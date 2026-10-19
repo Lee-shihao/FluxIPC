@@ -83,14 +83,18 @@ int fluxipc_parse_query(const char *raw, size_t rawlen,
 
 /**
  * Locate Content-Length inside a request header block without mutating it.
- * @p hbytes is the offset of the terminating CRLFCRLF.
+ * @return 0 if absent, 1 if valid (and *out set), -1 if malformed/duplicate.
  */
-size_t fluxipc_find_content_length(const char *buf, size_t hbytes)
+int fluxipc_find_content_length(const char *buf, size_t hbytes, size_t *out)
 {
+    if (out) *out = 0;
     const char *end = buf + hbytes;
     const char *line = memmem(buf, hbytes, "\r\n", 2);
     if (!line) return 0;
     line += 2;
+
+    int    found = 0;
+    size_t value = 0;
 
     while (line < end) {
         const char *eol = memmem(line, (size_t)(end - line) + 2, "\r\n", 2);
@@ -99,19 +103,32 @@ size_t fluxipc_find_content_length(const char *buf, size_t hbytes)
         if (colon) {
             size_t klen = (size_t)(colon - line);
             if (klen == 14 && strncasecmp(line, "Content-Length", 14) == 0) {
+                if (found) return -1;            /* duplicate */
+
                 const char *v = colon + 1;
                 while (v < eol && (*v == ' ' || *v == '\t')) v++;
-                size_t val = 0;
-                for (; v < eol && *v >= '0' && *v <= '9'; v++)
-                    val = val * 10 + (size_t)(*v - '0');
-                return val;
+                if (v == eol) return -1;         /* empty value */
+
+                size_t n = 0;
+                for (; v < eol && *v >= '0' && *v <= '9'; v++) {
+                    size_t d = (size_t)(*v - '0');
+                    if (n > ((size_t)-1 - d) / 10) return -1;  /* overflow */
+                    n = n * 10 + d;
+                }
+                while (v < eol && (*v == ' ' || *v == '\t')) v++;
+                if (v != eol) return -1;         /* trailing junk */
+
+                found = 1;
+                value = n;
             }
         }
         line = eol + 2;
     }
-    return 0;
-}
 
+    if (!found) return 0;
+    if (out) *out = value;
+    return 1;
+}
 
 /* ─── Structured request helpers ──────────────────────────────────────────── */
 

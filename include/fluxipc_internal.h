@@ -237,7 +237,8 @@ size_t fluxipc_url_decode(const char *src, size_t slen, char *dst, size_t cap);
 int    fluxipc_parse_query(const char *raw, size_t rawlen,
                            fluxipc_kv_t *kv, int max_kv,
                            char *arena, size_t arena_cap);
-size_t fluxipc_find_content_length(const char *buf, size_t hbytes);
+int    fluxipc_find_content_length(const char *buf, size_t hbytes,
+                                   size_t *out);
 
 /* ─── Misc helpers ────────────────────────────────────────────────────────── */
 int  fluxipc_method_to_mask(const char *method);

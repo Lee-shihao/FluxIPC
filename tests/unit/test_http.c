@@ -545,6 +545,17 @@ static void test_header_too_large(void **state)
     free(req);
 }
 
+static void test_invalid_content_length(void **state)
+{
+    (void)state;
+    fluxipc_conn_t c;
+    assert_int_equal(do_http(
+        "POST /x HTTP/1.1\r\nContent-Length: 2\r\nContent-Length: 2\r\n\r\n{}",
+        &c), 1);
+    assert_int_equal(resp_status(&c), 400);
+    ut_conn_free(&c);
+}
+
 static void test_malformed_request_line(void **state)
 {
     (void)state;
@@ -702,6 +713,7 @@ int ut_http(void)
         cmocka_unit_test_setup_teardown(test_body_not_yet_received, http_setup, http_teardown),
         cmocka_unit_test_setup_teardown(test_header_overflow, http_setup, http_teardown),
         cmocka_unit_test_setup_teardown(test_header_too_large, http_setup, http_teardown),
+        cmocka_unit_test_setup_teardown(test_invalid_content_length, http_setup, http_teardown),
         cmocka_unit_test_setup_teardown(test_malformed_request_line, http_setup, http_teardown),
         cmocka_unit_test_setup_teardown(test_handler_error_mapping, http_setup, http_teardown),
         cmocka_unit_test_setup_teardown(test_custom_status, http_setup, http_teardown),
