@@ -46,7 +46,7 @@ TARGET_CLI  := fluxipc-cli
 
 # ── Top-level targets ────────────────────────────────
 
-.PHONY: all clean install uninstall distclean lib static cli examples debug compdb ut it test cov mutate tools check-tools ut-asan it-asan test-mem
+.PHONY: all clean install uninstall distclean lib static cli examples debug compdb ut it test cov mutate tools check-tools ut-asan it-asan bench test-mem
 
 all: lib static cli examples
 
@@ -93,6 +93,7 @@ TEST_CFLAGS := $(CFLAGS) $(CMOCKA_CFLAGS) -DFLUXIPC_TESTING
 # so it is excluded from the link list to avoid duplicate symbols.
 UT_BIN       := fluxipc-ut
 IT_BIN       := fluxipc-it
+BENCH_BIN    := fluxipc-bench
 UT_SRCS      := tests/unit/ut_main.c tests/unit/ut_common.c \
                 tests/unit/test_protocol.c tests/unit/test_util.c \
                 tests/unit/test_tree.c tests/unit/test_core.c \
@@ -101,6 +102,7 @@ UT_SRCS      := tests/unit/ut_main.c tests/unit/ut_common.c \
                 tests/unit/test_cli.c
 UT_LIB_SRCS  := $(filter-out src/fluxipc_interactive.c,$(LIB_SRCS))
 IT_SRCS      := tests/integration/main.c
+BENCH_SRCS   := tests/bench/bench.c
 
 # AddressSanitizer + UBSan integration pair (memory errors / leaks).
 ASAN_DIR     := build/asan
@@ -148,6 +150,14 @@ it-asan: $(IT_ASAN_BIN) $(IT_ASAN_SRV)
 	ASAN_OPTIONS=detect_leaks=1:abort_on_error=1:strict_string_checks=1 \
 	UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
 	$(IT_ASAN_BIN)
+
+# Performance baseline: p50/p95/p99, throughput, server RSS.
+$(BENCH_BIN): $(BENCH_SRCS) $(TARGET_STATIC)
+	$(CC) $(CFLAGS) -o $@ $(BENCH_SRCS) $(TARGET_STATIC) $(LDFLAGS) $(LDLIBS)
+
+bench: $(BENCH_BIN) example_server
+	-@pkill -x example_server 2>/dev/null; sleep 0.2
+	./$(BENCH_BIN)
 
 # Memory-safety gate: unit ASan + full integration ASan/leak check.
 test-mem: ut-asan it-asan
@@ -276,7 +286,7 @@ clean:
 	rm -f $(TARGET_STATIC)
 	rm -f $(TARGET_CLI)
 	rm -f example_server
-	rm -f $(UT_BIN) $(ASAN_BIN) $(IT_BIN)
+	rm -f $(UT_BIN) $(ASAN_BIN) $(IT_BIN) $(BENCH_BIN)
 	rm -rf $(ASAN_DIR)
 	rm -f $(PKG_CONFIG)
 	rm -f /tmp/fluxipc_*.sock
