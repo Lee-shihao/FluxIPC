@@ -46,7 +46,7 @@ TARGET_CLI  := fluxipc-cli
 
 # ── Top-level targets ────────────────────────────────
 
-.PHONY: all clean install uninstall distclean lib static cli examples debug compdb ut it test cov mutate tools check-tools ut-asan
+.PHONY: all clean install uninstall distclean lib static cli examples debug compdb ut it test cov mutate tools check-tools ut-asan it-asan test-mem
 
 all: lib static cli examples
 
@@ -102,6 +102,12 @@ UT_SRCS      := tests/unit/ut_main.c tests/unit/ut_common.c \
 UT_LIB_SRCS  := $(filter-out src/fluxipc_interactive.c,$(LIB_SRCS))
 IT_SRCS      := tests/integration/main.c
 
+# AddressSanitizer + UBSan integration pair (memory errors / leaks).
+ASAN_DIR     := build/asan
+IT_ASAN_BIN  := $(ASAN_DIR)/fluxipc-it
+IT_ASAN_SRV  := $(ASAN_DIR)/example_server
+ASAN_FLAGS   := -fsanitize=address,undefined -fno-omit-frame-pointer
+
 check-tools:
 	@test -f "$(CMOCKA_LIBDIR)/libcmocka.so" || { \
 		echo "error: test toolchain missing; run 'make tools' first"; exit 1; }
@@ -117,10 +123,34 @@ $(IT_BIN): $(IT_SRCS) $(TARGET_STATIC)
 ut: $(UT_BIN)
 	./$(UT_BIN)
 
-# Integration tests: forks example_server, exercises IPC + HTTP.
+# Integration tests: forks example_server, exercises IPC + JSON + HTTP,
+# protocol robustness, concurrency, large payloads and RSS growth.
 it: $(IT_BIN) example_server
 	-@pkill -x example_server 2>/dev/null; sleep 0.2
 	./$(IT_BIN)
+
+# ASan/UBSan integration pair: both client and server are instrumented so
+# LeakSanitizer catches leaks in the real server lifecycle.
+$(IT_ASAN_BIN): $(IT_SRCS) $(LIB_SRCS)
+	@mkdir -p $(ASAN_DIR)
+	$(CC) $(CFLAGS) $(ASAN_FLAGS) -o $@ $(IT_SRCS) $(LIB_SRCS) \
+	    $(LDFLAGS) $(LDLIBS) $(ASAN_FLAGS)
+
+$(IT_ASAN_SRV): tests/example_server.c $(LIB_SRCS)
+	@mkdir -p $(ASAN_DIR)
+	$(CC) $(CFLAGS) $(ASAN_FLAGS) -o $@ tests/example_server.c $(LIB_SRCS) \
+	    $(LDFLAGS) $(LDLIBS) $(ASAN_FLAGS)
+
+it-asan: $(IT_ASAN_BIN) $(IT_ASAN_SRV)
+	-@pkill -x example_server 2>/dev/null; sleep 0.2
+	FLUXIPC_EXAMPLE_SERVER=$(abspath $(IT_ASAN_SRV)) \
+	FLUXIPC_TEST_VERBOSE=1 \
+	ASAN_OPTIONS=detect_leaks=1:abort_on_error=1:strict_string_checks=1 \
+	UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+	$(IT_ASAN_BIN)
+
+# Memory-safety gate: unit ASan + full integration ASan/leak check.
+test-mem: ut-asan it-asan
 
 # ── Toolchain bootstrap ──────────────────────────────
 
@@ -247,6 +277,7 @@ clean:
 	rm -f $(TARGET_CLI)
 	rm -f example_server
 	rm -f $(UT_BIN) $(ASAN_BIN) $(IT_BIN)
+	rm -rf $(ASAN_DIR)
 	rm -f $(PKG_CONFIG)
 	rm -f /tmp/fluxipc_*.sock
 
