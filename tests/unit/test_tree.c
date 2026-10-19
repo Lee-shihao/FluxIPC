@@ -216,13 +216,13 @@ static void test_deep_path_walk(void **state)
     /* Build a 70-level chain; tree_find_path walks every component. */
     fluxipc_node_t *root = make_root();
     fluxipc_node_t *cur  = root;
+    static const char digits[] = "0123456789abcdefghijklmnopqrstuvwxyz";
     for (int i = 0; i < 70; i++) {
-        char nm[16];
-        snprintf(nm, sizeof(nm), "n%d", i);
+        char nm[3] = { digits[i / 36], digits[i % 36], '\0' };
         cur = tree_mkdir(cur, nm);
         assert_non_null(cur);
     }
-    /* full path exists all the way down */
+    /* full path exists all the way down (70 components > old 64 token cap) */
     const char *full = cur->full_path;
     fluxipc_node_t *hit = tree_find_path(root, full);
     assert_ptr_equal(hit, cur);
