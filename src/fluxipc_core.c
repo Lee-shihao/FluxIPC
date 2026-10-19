@@ -596,10 +596,6 @@ static cJSON *json_scalar_from_text(fluxipc_schema_type_t type, const char *text
     switch (type) {
     case FLUXIPC_SCHEMA_INTEGER:
     case FLUXIPC_SCHEMA_NUMBER: {
-        cJSON *n = cJSON_Parse(text);
-        if (cJSON_IsNumber(n)) return n;
-        cJSON_Delete(n);
-
         char  *end = NULL;
         double d = strtod(text, &end);
         if (end != text && end && *end == '\0')
