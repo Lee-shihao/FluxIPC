@@ -19,7 +19,6 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <unistd.h>
-#include <fcntl.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -31,13 +30,6 @@
 static fluxipc_conn_t g_conns[FLUXIPC_MAX_CONNS];
 
 /* ─── helpers ───────────────────────────────────────────────────────────── */
-
-static int set_nonblocking(int fd)
-{
-    int flags = fcntl(fd, F_GETFL, 0);
-    if (flags < 0) return -errno;
-    return fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0 ? -errno : 0;
-}
 
 void conn_close(fluxipc_conn_t *c)
 {
@@ -127,9 +119,9 @@ static void accept_unix(fluxipc_ctx_t *ctx)
     for (;;) {
         struct sockaddr_un peer;
         socklen_t plen = sizeof(peer);
-        int fd = accept(ctx->server_fd, (struct sockaddr *)&peer, &plen);
+        int fd = accept4(ctx->server_fd, (struct sockaddr *)&peer, &plen,
+                         SOCK_NONBLOCK | SOCK_CLOEXEC);
         if (fd < 0) return;
-        set_nonblocking(fd);
         if (!conn_alloc(fd, FLUXIPC_CONN_UNIX)) close(fd);
     }
 }
@@ -139,9 +131,9 @@ static void accept_http(fluxipc_ctx_t *ctx)
     for (;;) {
         struct sockaddr_in peer;
         socklen_t plen = sizeof(peer);
-        int fd = accept(ctx->http_fd, (struct sockaddr *)&peer, &plen);
+        int fd = accept4(ctx->http_fd, (struct sockaddr *)&peer, &plen,
+                         SOCK_NONBLOCK | SOCK_CLOEXEC);
         if (fd < 0) return;
-        set_nonblocking(fd);
         int one = 1;
         setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
         if (!conn_alloc(fd, FLUXIPC_CONN_HTTP)) close(fd);
