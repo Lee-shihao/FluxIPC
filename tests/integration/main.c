@@ -655,6 +655,22 @@ int main(void)
         rc = http_raw(HTTP_PORT, raw, resp, sizeof(resp));
         CHECK_EQ_INT(http_status(resp), 400);
     }
+    {
+        size_t n = 3000;
+        char *raw = malloc(n + 64);
+        CHECK(raw != NULL);
+        if (raw) {
+            int off = snprintf(raw, n + 64, "GET /");
+            memset(raw + off, 'a', n);
+            const char *suffix = " HTTP/1.1\r\nHost: x\r\n\r\n";
+            size_t slen = strlen(suffix);
+            memcpy(raw + off + n, suffix, slen);
+            raw[off + n + slen] = '\0';
+            rc = http_raw(HTTP_PORT, raw, resp, sizeof(resp));
+            CHECK_EQ_INT(http_status(resp), 414);
+            free(raw);
+        }
+    }
 
     /* large HTTP body */
     {

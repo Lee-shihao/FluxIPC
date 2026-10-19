@@ -110,6 +110,7 @@ static const char *status_reason(int code)
         case 409: return "Conflict";
         case 411: return "Length Required";
         case 413: return "Content Too Large";
+        case 414: return "URI Too Long";
         case 415: return "Unsupported Media Type";
         case 422: return "Unprocessable Content";
         case 431: return "Request Header Fields Too Large";
@@ -490,6 +491,34 @@ static void route_request(fluxipc_ctx_t *ctx, http_buf_t *out,
 
 /* ── request parsing ────────────────────────────────────────────────────── */
 
+static int parse_request_line(char *line, char *method, size_t mcap,
+                              char *target, size_t tcap)
+{
+    char *p = line;
+    while (*p == ' ' || *p == '\t') p++;
+
+    char *m = p;
+    while (*p && *p != ' ' && *p != '\t') p++;
+    if (p == m) return -1;
+    size_t mlen = (size_t)(p - m);
+    if (mlen >= mcap) return -1;
+    memcpy(method, m, mlen);
+    method[mlen] = '\0';
+
+    while (*p == ' ' || *p == '\t') p++;
+    char *t = p;
+    while (*p && *p != ' ' && *p != '\t') p++;
+    if (p == t) return -1;
+    size_t tlen = (size_t)(p - t);
+    if (tlen >= tcap) return -2;
+    memcpy(target, t, tlen);
+    target[tlen] = '\0';
+
+    while (*p == ' ' || *p == '\t') p++;
+    if (strncmp(p, "HTTP/1.", 7) != 0) return -1;
+    return 0;
+}
+
 int http_conn_process(fluxipc_ctx_t *ctx, fluxipc_conn_t *c)
 {
     /*
@@ -540,7 +569,12 @@ int http_conn_process(fluxipc_ctx_t *ctx, fluxipc_conn_t *c)
 
     char method[16] = {0};
     char target[2048] = {0};
-    if (sscanf(c->rbuf, "%15s %2047s", method, target) != 2)
+    int pl = parse_request_line(c->rbuf, method, sizeof(method),
+                                target, sizeof(target));
+    if (pl == -2)
+        return respond_problem(c, 414, "URI Too Long",
+                               "request target exceeds limit", NULL);
+    if (pl < 0)
         return respond_problem(c, 400, "Bad Request",
                                "malformed request line", NULL);
 

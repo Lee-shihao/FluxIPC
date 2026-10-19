@@ -545,6 +545,26 @@ static void test_header_too_large(void **state)
     free(req);
 }
 
+static void test_target_too_long(void **state)
+{
+    (void)state;
+    size_t n = 3000;
+    char *req = malloc(n + 64);
+    assert_non_null(req);
+    int off = snprintf(req, n + 64, "GET /");
+    memset(req + off, 'a', n);
+    const char *suffix = " HTTP/1.1\r\n\r\n";
+    size_t slen = strlen(suffix);
+    memcpy(req + off + n, suffix, slen);
+    req[off + n + slen] = '\0';
+
+    fluxipc_conn_t c;
+    assert_int_equal(do_http(req, &c), 1);
+    assert_int_equal(resp_status(&c), 414);
+    ut_conn_free(&c);
+    free(req);
+}
+
 static void test_invalid_content_length(void **state)
 {
     (void)state;
@@ -713,6 +733,7 @@ int ut_http(void)
         cmocka_unit_test_setup_teardown(test_body_not_yet_received, http_setup, http_teardown),
         cmocka_unit_test_setup_teardown(test_header_overflow, http_setup, http_teardown),
         cmocka_unit_test_setup_teardown(test_header_too_large, http_setup, http_teardown),
+        cmocka_unit_test_setup_teardown(test_target_too_long, http_setup, http_teardown),
         cmocka_unit_test_setup_teardown(test_invalid_content_length, http_setup, http_teardown),
         cmocka_unit_test_setup_teardown(test_malformed_request_line, http_setup, http_teardown),
         cmocka_unit_test_setup_teardown(test_handler_error_mapping, http_setup, http_teardown),
