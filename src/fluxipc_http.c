@@ -328,6 +328,11 @@ static void route_request(fluxipc_ctx_t *ctx, http_buf_t *out,
     size_t path_len = qmark ? (size_t)(qmark - target) : strlen(target);
     const char *qraw = qmark ? qmark + 1 : NULL;
     size_t qlen = qraw ? strlen(qraw) : 0;
+    if (qraw && memmem(qraw, qlen, "%00", 3) != NULL) {
+        send_problem(out, 400, "Bad Request", "NUL byte in query", NULL,
+                     head_only, NULL);
+        return;
+    }
 
     char path[2048];
     size_t decoded = fluxipc_url_decode(target, path_len, path, sizeof(path));

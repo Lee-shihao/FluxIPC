@@ -627,6 +627,12 @@ int main(void)
                   resp, sizeof(resp));
     CHECK_EQ_INT(http_status(resp), 400);
 
+    /* NUL in a query value must be rejected too. */
+    rc = http_raw(HTTP_PORT,
+                  "GET /system/info?x=%00evil HTTP/1.1\r\nHost: x\r\n\r\n",
+                  resp, sizeof(resp));
+    CHECK_EQ_INT(http_status(resp), 400);
+
     {
         size_t cap = 20 * 1024;
         char *raw = malloc(cap);

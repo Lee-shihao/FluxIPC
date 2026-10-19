@@ -464,6 +464,11 @@ static void test_query_and_path_decode(void **state)
     assert_int_equal(do_http("GET /a/leaf%00evil HTTP/1.1\r\nHost: x\r\n\r\n", &c), 1);
     assert_int_equal(resp_status(&c), 400);
     ut_conn_free(&c);
+
+    /* NUL in a query value is rejected as well */
+    assert_int_equal(do_http("GET /a/leaf?x=%00evil HTTP/1.1\r\nHost: x\r\n\r\n", &c), 1);
+    assert_int_equal(resp_status(&c), 400);
+    ut_conn_free(&c);
 }
 
 static void test_body_parsing_variants(void **state)
