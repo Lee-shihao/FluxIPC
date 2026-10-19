@@ -530,6 +530,13 @@ static void test_header_too_large(void **state)
     assert_int_equal(do_http(req, &c), 1);
     assert_int_equal(resp_status(&c), 431);
     ut_conn_free(&c);
+
+    /* A complete header section over the limit is rejected too. */
+    memcpy(req + n - 4, "\r\n\r\n", 4);
+    assert_int_equal(do_http(req, &c), 1);
+    assert_int_equal(resp_status(&c), 431);
+    ut_conn_free(&c);
+
     free(req);
 }
 

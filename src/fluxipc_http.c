@@ -482,6 +482,9 @@ int http_conn_process(fluxipc_ctx_t *ctx, fluxipc_conn_t *c)
         return 0;
     }
     size_t hbytes = (size_t)(he - c->rbuf);
+    if (hbytes > HTTP_HDR_MAX)
+        return respond_problem(c, 431, "Request Header Fields Too Large",
+                               "header section exceeds limit", NULL);
 
     size_t content_length = fluxipc_find_content_length(c->rbuf, hbytes);
     if (content_length > HTTP_BODY_MAX)
