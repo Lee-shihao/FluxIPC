@@ -93,6 +93,12 @@ static void test_process_invalid_lengths(void **state)
     ut_conn_init(&c, buf, n, FLUXIPC_CONN_UNIX);
     assert_int_equal(sock_conn_process(g_ctx, &c), -1);
     ut_conn_free(&c);
+
+    n = build_call(buf, FLUXIPC_OP_CALL, "/x", NULL);
+    ((fluxipc_req_hdr_t *)buf)->arg_len = FLUXIPC_RBUF_MAX;    /* total too big */
+    ut_conn_init(&c, buf, n, FLUXIPC_CONN_UNIX);
+    assert_int_equal(sock_conn_process(g_ctx, &c), -1);
+    ut_conn_free(&c);
 }
 
 static void test_process_call(void **state)

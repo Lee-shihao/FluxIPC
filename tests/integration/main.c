@@ -671,6 +671,13 @@ int main(void)
     usleep(20 * 1000);
     CHECK_EQ_INT(server_alive(sock), 0);
 
+    /* A request larger than the per-connection buffer must be rejected, not
+     * left waiting forever and occupying a pool slot. */
+    send_bad_header(sock, FLUXIPC_PROTO_MAGIC, FLUXIPC_OP_CALL, 0,
+                    600000, NULL, 0);
+    usleep(20 * 1000);
+    CHECK_EQ_INT(server_alive(sock), 0);
+
     send_bad_header(sock, FLUXIPC_PROTO_MAGIC, FLUXIPC_OP_CALL,
                     FLUXIPC_PATH_MAX, 0, NULL, 0);
     usleep(20 * 1000);

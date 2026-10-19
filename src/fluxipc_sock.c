@@ -202,6 +202,7 @@ int sock_conn_process(fluxipc_ctx_t *ctx, fluxipc_conn_t *c)
     if (h.arg_len > IPC_ARG_MAX)               return -1;
 
     size_t total = sizeof(h) + h.path_len + h.arg_len;
+    if (total > FLUXIPC_RBUF_MAX) return -1;
     c->need = total;
     if (c->rlen < total) return 0;
 
