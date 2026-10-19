@@ -914,6 +914,151 @@ static void test_usage_zero_leaves(void **state)
     assert_non_null(strstr(out, "(none)"));
 }
 
+/* ── positional JSON binding ────────────────────────────────────────────── */
+
+static void test_bind_positional(void **state)
+{
+    (void)state;
+    fluxipc_node_t *root = fluxipc_tree_root();
+    cJSON *o = NULL;
+    int rc;
+
+    fluxipc_method_t types = {
+        .json = http_handler,
+        .schema = FLUXIPC_SCHEMA(
+            FLUXIPC_PROP_INT("i") "," FLUXIPC_PROP_NUMBER("n") ","
+            FLUXIPC_PROP_BOOL("b") "," FLUXIPC_PROP_STR("s") ","
+            FLUXIPC_PROP_ARRAY("arr", "string")),
+    };
+    assert_non_null(fluxipc_node_leaf(root, "bind_types", &types));
+    char *args[] = { (char *)"7", (char *)"1.5", (char *)"false",
+                     (char *)"hello", (char *)"x", (char *)"y" };
+    rc = fluxipc_json_bind_positional(g_ctx, "/bind_types", 6, args, &o);
+    assert_int_equal(rc, 0);
+    assert_int_equal(cJSON_GetObjectItem(o, "i")->valueint, 7);
+    assert_true(cJSON_GetObjectItem(o, "n")->valuedouble == 1.5);
+    assert_false(cJSON_IsTrue(cJSON_GetObjectItem(o, "b")));
+    assert_string_equal(cJSON_GetObjectItem(o, "s")->valuestring, "hello");
+    assert_int_equal(cJSON_GetArraySize(cJSON_GetObjectItem(o, "arr")), 2);
+    cJSON_Delete(o);
+    o = NULL;
+
+    /* strtod fallback for numbers JSON does not accept (leading zero). */
+    fluxipc_method_t fallback = {
+        .json = http_handler,
+        .schema = FLUXIPC_SCHEMA(FLUXIPC_PROP_INT("i")),
+    };
+    assert_non_null(fluxipc_node_leaf(root, "bind_fallback", &fallback));
+    char *fargs[] = { (char *)"007" };
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, "/bind_fallback",
+                                                  1, fargs, &o), 0);
+    assert_int_equal(cJSON_GetObjectItem(o, "i")->valueint, 7);
+    cJSON_Delete(o);
+    o = NULL;
+
+    /* invalid boolean */
+    fluxipc_method_t boolbad = {
+        .json = http_handler,
+        .schema = FLUXIPC_SCHEMA(FLUXIPC_PROP_BOOL("b")),
+    };
+    assert_non_null(fluxipc_node_leaf(root, "bind_boolbad", &boolbad));
+    char *bargs[] = { (char *)"maybe" };
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, "/bind_boolbad",
+                                                  1, bargs, &o), -EINVAL);
+
+    /* object + non-trailing array type checks */
+    fluxipc_method_t objarr = {
+        .json = http_handler,
+        .schema = FLUXIPC_SCHEMA(
+            FLUXIPC_PROP_ARRAY("arr", "integer") ","
+            FLUXIPC_PROP("obj", "object")),
+    };
+    assert_non_null(fluxipc_node_leaf(root, "bind_objarr", &objarr));
+    char *oargs[] = { (char *)"[1,2]", (char *)"{\"x\":1}" };
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, "/bind_objarr",
+                                                  2, oargs, &o), 0);
+    assert_true(cJSON_IsArray(cJSON_GetObjectItem(o, "arr")));
+    assert_true(cJSON_IsObject(cJSON_GetObjectItem(o, "obj")));
+    cJSON_Delete(o);
+    o = NULL;
+
+    char *obad[] = { (char *)"[1,2]", (char *)"[]" };
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, "/bind_objarr",
+                                                  2, obad, &o), -EINVAL);
+    char *abad[] = { (char *)"{}", (char *)"{\"x\":1}" };
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, "/bind_objarr",
+                                                  2, abad, &o), -EINVAL);
+
+    /* trailing untyped array collects strings */
+    fluxipc_method_t noitems = {
+        .json = http_handler,
+        .schema = FLUXIPC_SCHEMA(FLUXIPC_PROP("arr", "array")),
+    };
+    assert_non_null(fluxipc_node_leaf(root, "bind_noitems", &noitems));
+    char *nargs[] = { (char *)"a", (char *)"b" };
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, "/bind_noitems",
+                                                  2, nargs, &o), 0);
+    cJSON *arr = cJSON_GetObjectItem(o, "arr");
+    assert_int_equal(cJSON_GetArraySize(arr), 2);
+    assert_string_equal(cJSON_GetArrayItem(arr, 0)->valuestring, "a");
+    cJSON_Delete(o);
+    o = NULL;
+
+    /* invalid array item */
+    fluxipc_method_t baditem = {
+        .json = http_handler,
+        .schema = FLUXIPC_SCHEMA(FLUXIPC_PROP_ARRAY("arr", "integer")),
+    };
+    assert_non_null(fluxipc_node_leaf(root, "bind_baditem", &baditem));
+    char *iargs[] = { (char *)"1", (char *)"x" };
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, "/bind_baditem",
+                                                  2, iargs, &o), -EINVAL);
+
+    /* schema without properties / malformed schema */
+    fluxipc_method_t empty = {
+        .json = http_handler,
+        .schema = "{\"type\":\"object\"}",
+    };
+    assert_non_null(fluxipc_node_leaf(root, "bind_empty", &empty));
+    char *eargs[] = { (char *)"x" };
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, "/bind_empty",
+                                                  1, eargs, &o), -EINVAL);
+
+    fluxipc_method_t badschema = {
+        .json = http_handler,
+        .schema = "not-json",
+    };
+    assert_non_null(fluxipc_node_leaf(root, "bind_badschema", &badschema));
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, "/bind_badschema",
+                                                  1, eargs, &o), -EINVAL);
+
+    /* more arguments than properties */
+    fluxipc_method_t one = {
+        .json = http_handler,
+        .schema = FLUXIPC_SCHEMA(FLUXIPC_PROP_INT("i")),
+    };
+    assert_non_null(fluxipc_node_leaf(root, "bind_toomany", &one));
+    char *targs[] = { (char *)"1", (char *)"2" };
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, "/bind_toomany",
+                                                  2, targs, &o), -E2BIG);
+
+    /* no schema at all */
+    fluxipc_method_t noschema = { .json = http_handler };
+    assert_non_null(fluxipc_node_leaf(root, "bind_noschema", &noschema));
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, "/bind_noschema",
+                                                  1, eargs, &o), -EINVAL);
+
+    /* argument validation */
+    assert_int_equal(fluxipc_json_bind_positional(NULL, "/bind_types",
+                                                  1, args, &o), -EINVAL);
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, NULL,
+                                                  1, args, &o), -EINVAL);
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, "/bind_types",
+                                                  1, args, NULL), -EINVAL);
+    assert_int_equal(fluxipc_json_bind_positional(g_ctx, "/bind_types",
+                                                  0, NULL, &o), -EINVAL);
+}
+
 int ut_core(void)
 {
     const struct CMUnitTest tests[] = {
@@ -956,6 +1101,8 @@ int ut_core(void)
         cmocka_unit_test_setup_teardown(test_dispatch_ipc,
                                         core_setup, core_teardown),
         cmocka_unit_test_setup_teardown(test_dispatch_http,
+                                        core_setup, core_teardown),
+        cmocka_unit_test_setup_teardown(test_bind_positional,
                                         core_setup, core_teardown),
         cmocka_unit_test_setup_teardown(test_hooks,
                                         core_setup, core_teardown),

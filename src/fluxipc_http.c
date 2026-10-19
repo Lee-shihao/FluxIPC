@@ -53,7 +53,7 @@ static int buf_reserve(http_buf_t *b, size_t extra)
 {
     if (extra == 0) return 0;
     if (b->len + extra <= b->cap) return 0;
-    size_t ncap = b->cap ? b->cap : 512;
+    size_t ncap = b->cap ? b->cap : 2048;
     while (ncap < b->len + extra) {
         if (ncap > ((size_t)-1) / 2) { ncap = b->len + extra; break; }
         ncap *= 2;
@@ -143,6 +143,26 @@ static void build_response(http_buf_t *b, int status, const char *content_type,
         buf_append(b, body, body_len);
 }
 
+/*
+ * Small-response scratch for cJSON_PrintPreallocated().  HTTP handling is
+ * single-threaded, so one static buffer is sufficient; large bodies fall back
+ * to the allocating printer.
+ */
+#define HTTP_JSON_SCRATCH 4096
+static char g_json_scratch[HTTP_JSON_SCRATCH];
+
+static const char *json_print(const cJSON *body, char **owned)
+{
+    *owned = NULL;
+    if (!body) return "";
+    if (cJSON_PrintPreallocated((cJSON *)body, g_json_scratch,
+                                (int)sizeof(g_json_scratch), 0))
+        return g_json_scratch;
+
+    *owned = cJSON_PrintUnformatted(body);
+    return *owned ? *owned : "";
+}
+
 static void send_problem(http_buf_t *b, int status, const char *title,
                          const char *detail, const char *instance,
                          int head_only, const char *extra)
@@ -155,22 +175,22 @@ static void send_problem(http_buf_t *b, int status, const char *title,
     if (detail)   cJSON_AddStringToObject(o, "detail", detail);
     if (instance) cJSON_AddStringToObject(o, "instance", instance);
 
-    char *s = cJSON_PrintUnformatted(o);
-    if (s) {
-        build_response(b, status, "application/problem+json; charset=utf-8",
-                       s, strlen(s), head_only, extra);
-        free(s);
-    }
+    char *owned = NULL;
+    const char *s = json_print(o, &owned);
+    build_response(b, status, "application/problem+json; charset=utf-8",
+                   s, strlen(s), head_only, extra);
+    free(owned);
     cJSON_Delete(o);
 }
 
 static void send_json(http_buf_t *b, int status, cJSON *body, int head_only,
                       const char *extra)
 {
-    char *s = body ? cJSON_PrintUnformatted(body) : NULL;
+    char *owned = NULL;
+    const char *s = json_print(body, &owned);
     build_response(b, status, "application/json; charset=utf-8",
-                   s ? s : "", s ? strlen(s) : 0, head_only, extra);
-    free(s);
+                   s, strlen(s), head_only, extra);
+    free(owned);
 }
 
 static int respond_problem(fluxipc_conn_t *c, int status, const char *title,

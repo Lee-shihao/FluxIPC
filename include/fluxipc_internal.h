@@ -45,6 +45,24 @@ typedef struct {
     uint32_t data_len;
 } __attribute__((packed)) fluxipc_resp_hdr_t;  /* 12 bytes */
 
+/* ─── Cached JSON Schema fields (positional CALL_JSON) ───────────────────── */
+
+typedef enum {
+    FLUXIPC_SCHEMA_ANY = 0,
+    FLUXIPC_SCHEMA_STRING,
+    FLUXIPC_SCHEMA_INTEGER,
+    FLUXIPC_SCHEMA_NUMBER,
+    FLUXIPC_SCHEMA_BOOLEAN,
+    FLUXIPC_SCHEMA_OBJECT,
+    FLUXIPC_SCHEMA_ARRAY,
+} fluxipc_schema_type_t;
+
+typedef struct {
+    char    *name;       /* owned by the node */
+    uint8_t  type;
+    uint8_t  item_type;  /* array items, otherwise ANY */
+} fluxipc_schema_field_t;
+
 /* ─── Tree node ───────────────────────────────────────────────────────────── */
 /*
  * Hot lookup fields (name + sibling/children links) are kept at the front so
@@ -60,6 +78,11 @@ struct fluxipc_node {
     int                  is_leaf;
 
     fluxipc_method_t     method;      /* copied; strings owned by the node */
+
+    /* Lazily-built cache for positional CALL_JSON binding. */
+    fluxipc_schema_field_t *schema_fields;
+    uint16_t             schema_field_count;
+    uint8_t              schema_fields_built;
 
     char                 full_path[FLUXIPC_PATH_MAX];
 };
@@ -185,6 +208,12 @@ cJSON *fluxipc_build_manifest(fluxipc_node_t *node, int recursive, int verbose);
 fluxipc_node_t *tree_find_child(fluxipc_node_t *parent, const char *name);
 fluxipc_node_t *tree_find_path(fluxipc_node_t *root, const char *path);
 
+/**
+ * Return the lazily-built positional binding fields for @p node.
+ * Must be called while holding g_ctx->tree_lock.  @p count may be NULL.
+ */
+const fluxipc_schema_field_t *tree_node_schema_fields(fluxipc_node_t *node,
+                                                      size_t *count);
 fluxipc_node_t *tree_mkdir(fluxipc_node_t *parent, const char *name);
 fluxipc_node_t *tree_leaf(fluxipc_node_t *parent, const char *name,
                           const fluxipc_method_t *method);

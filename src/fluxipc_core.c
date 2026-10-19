@@ -591,12 +591,11 @@ int fluxipc_dispatch_json(fluxipc_ctx_t *ctx, const char *path,
 
 /* ─── Positional JSON arguments → schema-bound object ─────────────────────── */
 
-static cJSON *json_scalar_from_text(const cJSON *schema, const char *text)
+static cJSON *json_scalar_from_text(fluxipc_schema_type_t type, const char *text)
 {
-    const cJSON *type = cJSON_GetObjectItemCaseSensitive(schema, "type");
-    const char  *t = cJSON_IsString(type) ? type->valuestring : NULL;
-
-    if (t && (strcmp(t, "integer") == 0 || strcmp(t, "number") == 0)) {
+    switch (type) {
+    case FLUXIPC_SCHEMA_INTEGER:
+    case FLUXIPC_SCHEMA_NUMBER: {
         cJSON *n = cJSON_Parse(text);
         if (cJSON_IsNumber(n)) return n;
         cJSON_Delete(n);
@@ -607,101 +606,73 @@ static cJSON *json_scalar_from_text(const cJSON *schema, const char *text)
             return cJSON_CreateNumber(d);
         return NULL;
     }
-    if (t && strcmp(t, "boolean") == 0) {
+    case FLUXIPC_SCHEMA_BOOLEAN:
         if (strcasecmp(text, "true") == 0 || strcmp(text, "1") == 0)
             return cJSON_CreateTrue();
         if (strcasecmp(text, "false") == 0 || strcmp(text, "0") == 0)
             return cJSON_CreateFalse();
         return NULL;
-    }
-    if (t && (strcmp(t, "object") == 0 || strcmp(t, "array") == 0)) {
+    case FLUXIPC_SCHEMA_OBJECT:
+    case FLUXIPC_SCHEMA_ARRAY: {
         cJSON *v = cJSON_Parse(text);
         if (!v) return NULL;
-        if ((strcmp(t, "object") == 0 && !cJSON_IsObject(v)) ||
-            (strcmp(t, "array") == 0 && !cJSON_IsArray(v))) {
+        if ((type == FLUXIPC_SCHEMA_OBJECT && !cJSON_IsObject(v)) ||
+            (type == FLUXIPC_SCHEMA_ARRAY && !cJSON_IsArray(v))) {
             cJSON_Delete(v);
             return NULL;
         }
         return v;
     }
-    return cJSON_CreateString(text);
+    default:
+        return cJSON_CreateString(text);
+    }
 }
 
-static cJSON *json_array_from_args(const cJSON *schema, char **argv, int argc)
+static cJSON *json_array_from_args(fluxipc_schema_type_t item_type,
+                                   char **argv, int argc)
 {
     cJSON *arr = cJSON_CreateArray();
     if (!arr) return NULL;
 
-    const cJSON *items = cJSON_GetObjectItemCaseSensitive(schema, "items");
     for (int i = 0; i < argc; i++) {
-        cJSON *v = items ? json_scalar_from_text(items, argv[i])
-                         : cJSON_CreateString(argv[i]);
+        cJSON *v = json_scalar_from_text(item_type, argv[i]);
         if (!v) { cJSON_Delete(arr); return NULL; }
         cJSON_AddItemToArray(arr, v);
     }
     return arr;
 }
 
-int fluxipc_json_bind_positional(fluxipc_ctx_t *ctx, const char *path,
-                                 int argc, char **argv, cJSON **out)
+static int bind_schema_fields(const fluxipc_schema_field_t *fields,
+                              size_t count, int argc, char **argv,
+                              cJSON **out)
 {
-    if (!ctx || !path || !out || argc < 1) return -EINVAL;
-    *out = NULL;
-
-    char *schema_text = NULL;
-    int   has_schema  = 0;
-
-    pthread_mutex_lock(&ctx->tree_lock);
-    fluxipc_node_t *node = tree_find_path(ctx->root, path);
-    if (node && node->is_leaf && node->method.schema) {
-        has_schema  = 1;
-        schema_text = strdup(node->method.schema);
-    }
-    pthread_mutex_unlock(&ctx->tree_lock);
-
-    if (!has_schema) return -EINVAL;
-    if (!schema_text) return -ENOMEM;
-
-    cJSON *schema = cJSON_Parse(schema_text);
-    free(schema_text);
-    if (!schema) return -EINVAL;
-
-    cJSON *props = cJSON_GetObjectItemCaseSensitive(schema, "properties");
-    if (!cJSON_IsObject(props) || !props->child) {
-        cJSON_Delete(schema);
-        return -EINVAL;
-    }
-
     cJSON *bound = cJSON_CreateObject();
-    if (!bound) { cJSON_Delete(schema); return -ENOMEM; }
+    if (!bound) return -ENOMEM;
 
     int used = 0;
-    for (cJSON *prop = props->child; prop && used < argc; prop = prop->next) {
-        const char *name = prop->string;
+    for (size_t i = 0; i < count && used < argc; i++) {
+        const char *name = fields[i].name;
         if (!name) continue;
 
-        const cJSON *type = cJSON_GetObjectItemCaseSensitive(prop, "type");
-        const char  *t = cJSON_IsString(type) ? type->valuestring : NULL;
-        cJSON       *value = NULL;
-
+        cJSON *value = NULL;
         /* A trailing array property collects the remaining arguments. */
-        if (!prop->next && t && strcmp(t, "array") == 0) {
-            value = json_array_from_args(prop, argv + used, argc - used);
-            used  = argc;
+        if (i == count - 1 && fields[i].type == FLUXIPC_SCHEMA_ARRAY) {
+            value = json_array_from_args(
+                (fluxipc_schema_type_t)fields[i].item_type,
+                argv + used, argc - used);
+            used = argc;
         } else {
-            value = json_scalar_from_text(prop, argv[used]);
+            value = json_scalar_from_text(
+                (fluxipc_schema_type_t)fields[i].type, argv[used]);
             used++;
         }
 
         if (!value) {
             cJSON_Delete(bound);
-            cJSON_Delete(schema);
             return -EINVAL;
         }
         cJSON_AddItemToObject(bound, name, value);
     }
-
-    cJSON_Delete(schema);
 
     if (used < argc) {
         cJSON_Delete(bound);
@@ -710,6 +681,27 @@ int fluxipc_json_bind_positional(fluxipc_ctx_t *ctx, const char *path,
 
     *out = bound;
     return 0;
+}
+
+int fluxipc_json_bind_positional(fluxipc_ctx_t *ctx, const char *path,
+                                 int argc, char **argv, cJSON **out)
+{
+    if (!ctx || !path || !out || argc < 1) return -EINVAL;
+    *out = NULL;
+
+    int rc = -EINVAL;
+
+    pthread_mutex_lock(&ctx->tree_lock);
+    fluxipc_node_t *node = tree_find_path(ctx->root, path);
+    if (node && node->is_leaf) {
+        size_t count = 0;
+        const fluxipc_schema_field_t *fields =
+            tree_node_schema_fields(node, &count);
+        if (fields && count > 0)
+            rc = bind_schema_fields(fields, count, argc, argv, out);
+    }
+    pthread_mutex_unlock(&ctx->tree_lock);
+    return rc;
 }
 
 /* ─── fluxipc_set_request_hooks ────────────────────────────────────────────── */
