@@ -15,6 +15,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <netinet/in.h>
+#include <pthread.h>
 
 /* ── fixtures ────────────────────────────────────────────────────────────── */
 
@@ -194,6 +195,15 @@ static void test_init_run_dir_exists(void **state)
     fluxipc_destroy();
 }
 
+static void *stop_after_delay(void *arg)
+{
+    (void)arg;
+    struct timespec ts = { 0, 20 * 1000 * 1000 };
+    nanosleep(&ts, NULL);
+    fluxipc_stop();
+    return NULL;
+}
+
 static void test_poll_and_stop(void **state)
 {
     (void)state;
@@ -201,8 +211,12 @@ static void test_poll_and_stop(void **state)
     assert_int_equal(fluxipc_poll(NULL), -EINVAL);   /* before init */
 
     ut_server_up();
+
+    /* conn_poll() blocks on select(); fluxipc_stop() wakes it via eventfd. */
+    pthread_t th;
+    assert_int_equal(pthread_create(&th, NULL, stop_after_delay, NULL), 0);
     assert_true(fluxipc_poll(NULL) >= 0);
-    fluxipc_stop();
+    pthread_join(th, NULL);
     assert_int_equal(g_ctx->running, 0);
     assert_int_equal(fluxipc_poll(NULL), -EINVAL);   /* after stop */
     ut_server_down();

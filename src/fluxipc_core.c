@@ -15,6 +15,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/eventfd.h>
 #include <limits.h>
 
 fluxipc_ctx_t *g_ctx = NULL;
@@ -57,6 +58,7 @@ static fluxipc_ctx_t *ctx_alloc(const char *prog_name)
              "/run/user/%d/%s-fluxipc", getuid(), prog_name);
     ctx->server_fd = -1;
     ctx->http_fd   = -1;
+    ctx->wake_fd   = -1;
     ctx->next_id   = 1;
     ctx->running   = 1;
     pthread_mutex_init(&ctx->tree_lock, NULL);
@@ -80,6 +82,9 @@ int fluxipc_server_init(const char *prog_name, uint16_t http_port)
     fluxipc_ctx_t *ctx = ctx_alloc(prog_name);
     if (!ctx) return -ENOMEM;
 
+    /* Wake select() for fluxipc_stop() without a periodic timeout. */
+    ctx->wake_fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+
     conn_pool_init();
     /* /run/user/<uid>/ then /run/user/<uid>/<prog>-fluxipc/ */
     {
@@ -93,7 +98,12 @@ int fluxipc_server_init(const char *prog_name, uint16_t http_port)
     chmod(ctx->run_dir, 0755);
 
     int rc = sock_server_create(ctx);
-    if (rc < 0) { free(ctx->root); free(ctx); return rc; }
+    if (rc < 0) {
+        if (ctx->wake_fd >= 0) close(ctx->wake_fd);
+        free(ctx->root);
+        free(ctx);
+        return rc;
+    }
 
     g_ctx = ctx;
     fluxipc_static_apply();   /* install FLUXIPC_STATIC() endpoints, if any */
@@ -721,7 +731,16 @@ int fluxipc_poll(void *unused)
     return conn_poll(g_ctx);
 }
 
-void fluxipc_stop(void)  { if (g_ctx) g_ctx->running = 0; }
+void fluxipc_stop(void)
+{
+    if (!g_ctx) return;
+    g_ctx->running = 0;
+    if (g_ctx->wake_fd >= 0) {
+        uint64_t one = 1;
+        ssize_t  n = write(g_ctx->wake_fd, &one, sizeof(one));
+        (void)n;
+    }
+}
 
 void fluxipc_destroy(void)
 {
@@ -736,6 +755,7 @@ void fluxipc_destroy(void)
     ctx->root = NULL;
     pthread_mutex_unlock(&ctx->tree_lock);
     pthread_mutex_destroy(&ctx->tree_lock);
+    if (ctx->wake_fd >= 0) close(ctx->wake_fd);
     free(ctx->ipc_out);
     free(ctx);
 }

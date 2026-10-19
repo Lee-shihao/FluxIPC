@@ -308,15 +308,18 @@ static void test_poll_no_descriptors(void **state)
     (void)state;
     ut_server_up();
     conn_pool_init();
-    int saved_srv = g_ctx->server_fd;
+    int saved_srv  = g_ctx->server_fd;
     int saved_http = g_ctx->http_fd;
+    int saved_wake = g_ctx->wake_fd;
     g_ctx->server_fd = -1;
     g_ctx->http_fd   = -1;
+    g_ctx->wake_fd   = -1;   /* exercise the timeout fallback */
 
     assert_int_equal(conn_poll(g_ctx), 0);   /* select timeout, no error */
 
     g_ctx->server_fd = saved_srv;
     g_ctx->http_fd   = saved_http;
+    g_ctx->wake_fd   = saved_wake;
     ut_server_down();
 }
 

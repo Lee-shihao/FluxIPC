@@ -204,6 +204,10 @@ int conn_poll(fluxipc_ctx_t *ctx)
         FD_SET(ctx->http_fd, &rfds);
         if (ctx->http_fd > maxfd) maxfd = ctx->http_fd;
     }
+    if (ctx->wake_fd >= 0) {
+        FD_SET(ctx->wake_fd, &rfds);
+        if (ctx->wake_fd > maxfd) maxfd = ctx->wake_fd;
+    }
     for (int i = 0; i < FLUXIPC_MAX_CONNS; i++) {
         fluxipc_conn_t *c = &g_conns[i];
         if (c->fd < 0) continue;
@@ -212,10 +216,22 @@ int conn_poll(fluxipc_ctx_t *ctx)
         if (c->fd > maxfd) maxfd = c->fd;
     }
 
-    struct timeval tv = { .tv_sec = 0, .tv_usec = CONN_POLL_MS * 1000 };
-    int ret = select(maxfd + 1, &rfds, &wfds, NULL, &tv);
+    struct timeval tv;
+    struct timeval *tvp = NULL;
+    if (ctx->wake_fd < 0) {
+        tv.tv_sec  = 0;
+        tv.tv_usec = CONN_POLL_MS * 1000;
+        tvp = &tv;   /* fallback if eventfd could not be created */
+    }
+    int ret = select(maxfd + 1, &rfds, &wfds, NULL, tvp);
     if (ret < 0) { if (errno == EINTR) return 0; return -errno; }
     if (ret == 0) return 0;
+
+    if (ctx->wake_fd >= 0 && FD_ISSET(ctx->wake_fd, &rfds)) {
+        uint64_t v;
+        ssize_t n = read(ctx->wake_fd, &v, sizeof(v));
+        (void)n;
+    }
 
     if (ctx->server_fd >= 0 && FD_ISSET(ctx->server_fd, &rfds))
         accept_unix(ctx);

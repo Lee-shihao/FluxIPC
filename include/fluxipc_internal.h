@@ -98,6 +98,7 @@ typedef struct fluxipc_ctx_s {
     volatile int      running;
     uint32_t          next_id;
     int               http_fd;     /* TCP listener fd; -1 if HTTP disabled */
+    int               wake_fd;     /* eventfd used by fluxipc_stop(); -1 if off */
 
     /* Reused per-call IPC output buffer (single-threaded dispatch). */
     char             *ipc_out;
