@@ -85,8 +85,8 @@
     "semantic_hash": ""
   },
   "src/fluxipc_http.c": {
-    "mtime": 1792412997.5303319,
-    "ast_hash": "d343d40beeebd8f5ce83a0a6be210933",
+    "mtime": 1792413216.8762221,
+    "ast_hash": "db146868e1b01d92ace8be6c3f81d591",
     "semantic_hash": ""
   },
   ".vscode/c_cpp_properties.json": {
@@ -115,8 +115,8 @@
     "semantic_hash": ""
   },
   "tests/integration/main.c": {
-    "mtime": 1792413007.0587184,
-    "ast_hash": "1f14b6810fac6480dd326d89af0fecde",
+    "mtime": 1792413216.8770063,
+    "ast_hash": "6e2a3d323a1931f7483c6da67e95d5de",
     "semantic_hash": ""
   },
   "tests/unit/main.c": {
@@ -180,8 +180,8 @@
     "semantic_hash": ""
   },
   "tests/unit/test_http.c": {
-    "mtime": 1792413007.0585077,
-    "ast_hash": "dfdac772e3cf7bbb753e5f3f2c1de866",
+    "mtime": 1792413216.8765442,
+    "ast_hash": "efee1f8f69e8b37a213aa9031195b098",
     "semantic_hash": ""
   },
   "tests/unit/test_interactive.c": {
