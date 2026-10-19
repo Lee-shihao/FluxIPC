@@ -671,7 +671,8 @@ static int bind_schema_fields(const fluxipc_schema_field_t *fields,
             cJSON_Delete(bound);
             return -EINVAL;
         }
-        cJSON_AddItemToObject(bound, name, value);
+        /* Field names are owned by the node and outlive the response. */
+        cJSON_AddItemToObjectCS(bound, name, value);
     }
 
     if (used < argc) {
