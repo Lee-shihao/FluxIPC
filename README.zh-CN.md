@@ -75,7 +75,7 @@ fluxipc-cli example_server -c /demo/arithmetic/add 7 3
 
 ### 1. 注册端点
 
-注册是动态的、**基于路径**的：辅助函数会自动创建沿途缺失的每一级容器。`fluxipc_register()` 保留 `main` 分支的经典签名 `(path, usage, slot_sz, handler, data)`，注册 IPC 端点；`fluxipc_register_method()` 接收完整的 `fluxipc_method_t`（IPC 和/或 HTTP）；`fluxipc_register_http()` 补挂 HTTP 端；`fluxipc_register_all()` 一次注册整张静态表。它们都会复制方法描述符（处理器、`summary`、`description`、`schema`），因此传入栈上临时对象或 `FLUXIPC_METHOD` 复合字面量都是安全的。
+注册是动态的、**基于路径**的：辅助函数会自动创建沿途缺失的每一级容器。`fluxipc_register()` 保留 `main` 分支的经典签名 `(path, usage, slot_sz, handler, data)`，注册 IPC 端点；`fluxipc_register_method()` 接收完整的 `fluxipc_method_t`（IPC 和/或 JSON）；`fluxipc_register_json()` 补挂 JSON 端；`fluxipc_register_all()` 一次注册整张静态表。它们都会复制方法描述符（处理器、`summary`、`description`、`schema`），因此传入栈上临时对象或 `FLUXIPC_METHOD` 复合字面量都是安全的。
 
 ```c
 #include <fluxipc.h>
@@ -90,14 +90,11 @@ static int hello_ipc(void *data, int argc, char **argv,
     return 0;
 }
 
-/* HTTP：已解析的请求 → 结构化 JSON */
-static int hello_http(void *data, const fluxipc_http_request_t *req,
-                      fluxipc_http_response_t *resp)
+/* JSON：已解析的请求 → cJSON 响应（HTTP + 本地调用） */
+static int hello_json(void *data, const fluxipc_json_request_t *req,
+                      fluxipc_json_response_t *resp)
 {
-    const char *name = "World";
-    const cJSON *v = req->json
-        ? cJSON_GetObjectItemCaseSensitive(req->json, "name") : NULL;
-    if (cJSON_IsString(v) && v->valuestring) name = v->valuestring;
+    const char *name = fluxipc_json_str(req, "name", "World");
 
     cJSON *o = cJSON_CreateObject();
     cJSON_AddStringToObject(o, "message", "Hello");
@@ -113,10 +110,9 @@ int main(void)
     /* 一次调用写清完整方法：元数据与两个处理器。 */
     fluxipc_register_method("/greet/hello", &FLUXIPC_METHOD(
         hello_ipc,          /* socket / CLI：原始字节 */
-        hello_http,         /* HTTP：JSON       */
+        hello_json,         /* JSON：HTTP + 本地调用 */
         "Say hello",
-        "{\"type\":\"object\",\"properties\":"
-        "{\"name\":{\"type\":\"string\"}}}",
+        FLUXIPC_SCHEMA(FLUXIPC_PROP_STR("name")),
         FLUXIPC_M_GET | FLUXIPC_M_POST));
 
     /* ……或 main 分支的经典写法（仅 IPC）。 */
@@ -132,9 +128,9 @@ int main(void)
 
 ```c
 static const fluxipc_endpoint_t endpoints[] = {
-    { "/system/info", FLUXIPC_METHOD(info_ipc, info_http,
+    { "/system/info", FLUXIPC_METHOD(info_ipc, info_json,
                                       "Process info", NULL, FLUXIPC_M_GET) },
-    { "/demo/add",    FLUXIPC_METHOD(add_ipc, add_http,
+    { "/demo/add",    FLUXIPC_METHOD(add_ipc, add_json,
                                       "Add two integers", NULL,
                                       FLUXIPC_M_GET | FLUXIPC_M_POST) },
 };
@@ -142,7 +138,7 @@ static const fluxipc_endpoint_t endpoints[] = {
 fluxipc_register_all(endpoints, sizeof(endpoints) / sizeof(endpoints[0]));
 ```
 
-`FLUXIPC_METHOD_D(ipc, http, data, summary, schema, methods)` 与前者相同，只是额外设置每个叶子的 `data` 指针，用于有状态的处理器。
+`FLUXIPC_METHOD_D(ipc, json, data, summary, schema, methods)` 与前者相同，只是额外设置每个叶子的 `data` 指针，用于有状态的处理器。
 
 #### 兼容 `main` 分支
 
@@ -161,15 +157,15 @@ FLUXIPC_STATIC("/greet/compiled", "say hello", 0, hello_ipc, NULL);
 
 #### 分离注册（IPC 与 HTTP 各自独立）
 
-对同一路径再次注册会**合并**到已有叶子上：只填充仍为空的字段，因此 IPC-only 的注册可以稍后用 `fluxipc_register_http()` 补上 HTTP，反之亦然。HTTP 方法掩码由首次挂上 HTTP 处理器的那次调用决定；已存在的处理器、元数据或 `data` 不会被覆盖。
+对同一路径再次注册会**合并**到已有叶子上：只填充仍为空的字段，因此 IPC-only 的注册可以稍后用 `fluxipc_register_json()` 补上 JSON，反之亦然。方法掩码由首次挂上 JSON 处理器的那次调用决定；已存在的处理器、元数据或 `data` 不会被覆盖。
 
 ```c
 /* 经典 / IPC-only 注册（方法里的 http 也可以传 NULL）。 */
 fluxipc_register("/greet/hello", "Say hello", 0, hello_ipc, NULL);
 
-/* 稍后补上 HTTP 端（ipc 传 NULL）。 */
-fluxipc_register_http("/greet/hello", &FLUXIPC_METHOD(
-    NULL, hello_http, "Say hello", NULL, FLUXIPC_M_GET));
+/* 稍后补上 JSON 端（ipc 传 NULL）。 */
+fluxipc_register_json("/greet/hello", &FLUXIPC_METHOD(
+    NULL, hello_json, "Say hello", NULL, FLUXIPC_M_GET));
 ```
 
 注册失败时是原子的：不会遗留创建到一半的容器，也不会剪除你自己创建的容器。
@@ -189,7 +185,7 @@ gcc -o myapp myapp.c $(pkg-config --cflags --libs fluxipc) -lcjson
 | `fluxipc_tree_root()` | 根节点（在 `fluxipc_server_init` 之后可用） |
 | `fluxipc_register(path, usage, slot_sz, handler, data)` | main 分支经典注册（IPC） |
 | `fluxipc_register_method(path, &method)` | 注册完整方法；重复时合并 |
-| `fluxipc_register_http(path, &method)` | 注册 HTTP 端（合并，`ipc` 通常为 NULL） |
+| `fluxipc_register_json(path, &method)` | 注册 JSON 端（合并，`ipc` 通常为 NULL） |
 | `fluxipc_register_all(table, count)` | 注册静态端点表 |
 | `fluxipc_node_mkdir(parent, name)` | 获取或创建容器子节点（幂等） |
 | `fluxipc_node_leaf(parent, name, &method)` | 在 `parent` 下创建叶子方法 |
@@ -209,19 +205,20 @@ typedef int (*fluxipc_handler_fn)(void *data, int argc, char **argv,
                                   void *out_buf, size_t out_cap, size_t *out_len);
 ```
 
-**HTTP 处理器** —— 已解析请求，cJSON 响应：
+**JSON 处理器** —— 已解析请求，cJSON 响应：
 
 ```c
-typedef int (*fluxipc_http_handler_fn)(void *data,
-                                       const fluxipc_http_request_t *req,
-                                       fluxipc_http_response_t *resp);
+typedef int (*fluxipc_json_handler_fn)(void *data,
+                                       const fluxipc_json_request_t *req,
+                                       fluxipc_json_response_t *resp);
 ```
 
-`fluxipc_http_request_t` 除标准请求字段外，还携带已解析的 JSON 请求体：
+`fluxipc_json_request_t` 除标准请求字段外，还携带已解析的 JSON 请求体：
 
 | 字段 | 含义 |
 |------|------|
-| `method` | `"GET"`、`"POST"`、… |
+| `method` | 原始动词字符串，例如 `"GET"`（用于日志） |
+| `verb` | 框架解析后的 `FLUXIPC_M_*` 位；业务代码使用下面的宏 |
 | `path` | 解码后的命名空间路径，例如 `/system/info` |
 | `query` / `query_count` | 查询参数 |
 | `headers` / `header_count` | HTTP 头 |
@@ -229,10 +226,66 @@ typedef int (*fluxipc_http_handler_fn)(void *data,
 | `json` | 已解析的请求体（`const cJSON *`），或 `NULL` |
 | `data` | 该方法注册时的 `data` 指针 |
 
-`fluxipc_http_response_t` 包含 `status`（0 → 200）、拥有所有权的
+框架在传输入口只解析一次动词字符串。业务代码比较解析后的位，而不是调用
+`strcmp(req->method, ...)`：
+
+```c
+if (FLUXIPC_VERB_IS_WRITE(req)) {          /* POST / PUT / PATCH */
+    long rpm = fluxipc_json_int(req, "rpm", -1);
+}
+
+if (FLUXIPC_VERB_IS(req, FLUXIPC_M_DELETE)) {
+    /* ... */
+}
+```
+
+常用字段读取由框架提供，先读 JSON 请求体，再读 query 参数：
+
+```c
+const char *name = fluxipc_json_str(req, "name", "World");
+long        n    = fluxipc_json_int(req, "n", 0);
+double      d    = fluxipc_json_double(req, "ratio", 1.0);
+int         ok   = fluxipc_json_bool(req, "enabled", 0);
+int         has  = fluxipc_json_has(req, "name");
+```
+
+错误响应也由框架构造；传入 errno（或显式正状态码）和消息即可：
+
+```c
+return fluxipc_json_error(resp, -EINVAL, "level must be 0-5");
+return fluxipc_json_error(resp, -EBUSY,  "motor is disabled");
+return fluxipc_json_error(resp, 409,     "custom conflict");
+```
+
+`fluxipc_json_response_t` 包含 `status`（0 → 200）、拥有所有权的
 `cJSON *json`，以及可选的 `content_type`。
 
-两种传输从不共用返回风格：**IPC 返回原始字节，HTTP 返回 JSON。**
+默认情况下两种表示保持独立的返回风格：**IPC 返回原始字节，JSON 返回
+cJSON。** `fluxipc_call_json()` 增加一个可选的 IPC JSON 表示模式：它调用叶子的
+JSON 处理器并序列化其结果，因此 JSON 仍然只有唯一的生产者。
+
+### JSON Schema 辅助宏
+
+`fluxipc_method_t.schema` 是标准 JSON Schema 文本。它属于公共契约：会出现在
+容器 manifest、`/openapi.json` 中，并用于 `CALL_JSON` 位置参数绑定。因此顶层的
+`"type":"object"` 并不冗余——它明确声明请求体是对象，也让 OpenAPI 输出更精确。
+
+为了避免转义字符串，可以使用辅助宏：
+
+```c
+FLUXIPC_SCHEMA(
+    FLUXIPC_PROP_INT("a") "," FLUXIPC_PROP_INT("b"))
+
+FLUXIPC_SCHEMA(FLUXIPC_PROP_STR("name"))
+FLUXIPC_SCHEMA(FLUXIPC_PROP_NUMBER("offset"))
+FLUXIPC_SCHEMA(FLUXIPC_PROP_ARRAY("args", "string"))
+```
+
+这些宏只是展开成普通 JSON Schema 文本；需要 `required`、描述、范围约束等完整
+能力时，仍然可以直接传入手写 schema。
+
+旧的 `fluxipc_http_request_t`、`fluxipc_http_response_t`、
+`fluxipc_http_handler_fn` 和 `fluxipc_register_http` 名称仍作为兼容别名保留。
 
 ---
 
@@ -328,8 +381,16 @@ curl -s http://localhost:32100/openapi.json
 ```bash
 fluxipc-cli example_server -c /system/info
 fluxipc-cli example_server -c /demo/arithmetic/add 7 3
+fluxipc-cli example_server --json /system/info
+fluxipc-cli example_server --json /demo/arithmetic/add '{"a":7,"b":3}'
+fluxipc-cli example_server --json /demo/arithmetic/add 7 3
+fluxipc-cli example_server --json -X PUT /module/sensor/config '{"rate_hz":20}'
 fluxipc-cli example_server --list
 ```
+
+`--json` 模式下：单个 `{...}`/`[...]` 参数作为 JSON 请求体，`key=value`
+参数作为 query 参数，裸参数则按 JSON Schema 的属性声明顺序进行位置绑定
+（末尾的数组属性会收集剩余参数）。
 
 ### 交互式 shell
 
@@ -456,7 +517,7 @@ fork `example_server`，端到端地验证两种传输：IPC 调用（含参数�
 | `fluxipc_server_init(prog, http_port)` | 初始化 socket 与可选 HTTP（0 = 关闭） |
 | `fluxipc_register(path, usage, slot_sz, handler, data)` | main 分支经典注册（IPC） |
 | `fluxipc_register_method(path, method)` | 注册完整方法；重复时合并 |
-| `fluxipc_register_http(path, method)` | 注册端点的 HTTP 端 |
+| `fluxipc_register_json(path, method)` | 注册端点的 JSON 端 |
 | `fluxipc_register_all(table, count)` | 注册静态 `fluxipc_endpoint_t` 表 |
 | `FLUXIPC_STATIC(path, usage, slot, handler, data)` | 编译期端点（构造函数排队） |
 | `fluxipc_tree_root()` | 根节点 |
@@ -475,9 +536,20 @@ fork `example_server`，端到端地验证两种传输：IPC 调用（含参数�
 
 | 函数 | 说明 |
 |------|------|
-| `fluxipc_call(sock, path, argc, argv, out, cap, len)` | 底层 socket 调用 |
+| `fluxipc_call(sock, path, argc, argv, out, cap, len)` | 底层 socket 调用（原始字节） |
+| `fluxipc_call_json(sock, path, method, paramc, params, &out, &len)` | 走 IPC，返回 JSON 处理器的响应 |
 | `fluxipc_list_endpoints(prog, cb, data)` | 通过服务端 socket 枚举端点 |
 | `fluxipc_interactive_init(prog)` | 进入 readline REPL |
+
+### JSON 处理器辅助
+
+| 函数 / 宏 | 说明 |
+|-----------|------|
+| `fluxipc_json_str/int/double/bool(req, key, def)` | 先读 JSON 请求体，再读 query 参数 |
+| `fluxipc_json_has(req, key)` | 判断请求体或 query 中是否存在字段 |
+| `fluxipc_json_error(resp, code, msg)` | 构造 `{"error":msg,"code":code}` 并设置状态码 |
+| `FLUXIPC_VERB_IS(req, mask)` | 用解析后的动词位比较 `FLUXIPC_M_*` |
+| `FLUXIPC_VERB_IS_READ(req)` / `FLUXIPC_VERB_IS_WRITE(req)` | 常用 GET / 写操作判断 |
 
 ---
 
@@ -518,8 +590,8 @@ FluxIPC/
 
 ## 设计说明
 
-- **一棵树、两个处理器、两种传输** —— HTTP 与 Unix socket 解析同一棵树；各自
-  调用叶子的 `http` 或 `ipc` 处理器。
+- **一棵树、两种表示** —— HTTP 与 Unix socket 解析同一棵树；原始 IPC 调用
+  `ipc`，结构化 JSON 调用（HTTP 或本地）调用 `json`。
 - **注册是机制而非策略** —— 路径化辅助函数（`fluxipc_register_method`）会自动创建缺失的容器，节点原语仍然保留。为兼容 main 分支保留了经典 `fluxipc_register` 签名与 `FLUXIPC_STATIC`；`FLUXIPC_STATIC` 由构造函数排队，因此依旧没有 ELF section、也不需要 `-rdynamic`。
 - **内置叶子枚举** —— 每个节点都能枚举其叶子；HTTP 通过 `GET /<container>`
   暴露，socket 通过协议的 `LIST` 操作暴露。

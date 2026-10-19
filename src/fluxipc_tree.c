@@ -139,7 +139,7 @@ fluxipc_node_t *tree_leaf(fluxipc_node_t *parent, const char *name,
                           const fluxipc_method_t *method)
 {
     if (!parent || !name || !name[0] || !method ||
-        (!method->ipc && !method->http))
+        (!method->ipc && !method->json))
         return NULL;
 
     if (tree_find_child(parent, name)) return NULL;   /* EEXIST */
@@ -148,7 +148,7 @@ fluxipc_node_t *tree_leaf(fluxipc_node_t *parent, const char *name,
     if (!n) return NULL;
 
     n->method.ipc         = method->ipc;
-    n->method.http        = method->http;
+    n->method.json        = method->json;
     n->method.data        = method->data;
     n->method.methods     = method->methods ? method->methods
                                             : FLUXIPC_M_DEFAULT;
@@ -166,20 +166,20 @@ fluxipc_node_t *tree_leaf(fluxipc_node_t *parent, const char *name,
 }
 
 /*
- * Merge @p src into an already-registered leaf.  This lets the IPC and HTTP
+ * Merge @p src into an already-registered leaf.  This lets the IPC and JSON
  * sides of one endpoint be registered independently (and in either order):
  * only fields that are still empty are filled, so the first registration of a
- * given handler/metadata value is the one that is kept.  The HTTP method mask
- * is owned by whichever call first attaches an HTTP handler.
+ * given handler/metadata value is the one that is kept.  The method mask is
+ * owned by whichever call first attaches a JSON handler.
  */
 void tree_leaf_merge(fluxipc_node_t *node, const fluxipc_method_t *src)
 {
     if (!node->method.ipc  && src->ipc)  node->method.ipc  = src->ipc;
 
-    int had_http = node->method.http != NULL;
-    if (!node->method.http && src->http) node->method.http = src->http;
-    if (src->http && src->methods && !had_http)
-        node->method.methods = src->methods;   /* the HTTP side owns the mask */
+    int had_json = node->method.json != NULL;
+    if (!node->method.json && src->json) node->method.json = src->json;
+    if (src->json && src->methods && !had_json)
+        node->method.methods = src->methods;   /* the JSON side owns the mask */
 
     if (!node->method.data && src->data) node->method.data = src->data;
 

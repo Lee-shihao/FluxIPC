@@ -82,7 +82,7 @@ Registration is dynamic and **path-based**: the helpers create every missing
 intermediate container for you.  `fluxipc_register()` keeps the classic
 `main`-branch signature `(path, usage, slot_sz, handler, data)` and registers
 an IPC endpoint; `fluxipc_register_method()` takes a full `fluxipc_method_t`
-(IPC and/or HTTP); `fluxipc_register_http()` attaches the HTTP side; and
+(IPC and/or JSON); `fluxipc_register_json()` attaches the JSON side; and
 `fluxipc_register_all()` registers a whole static table.  All of them copy the
 method descriptor (handlers, `summary`, `description`, `schema`), so passing a
 stack temporary or a `FLUXIPC_METHOD` compound literal is safe.
@@ -100,14 +100,11 @@ static int hello_ipc(void *data, int argc, char **argv,
     return 0;
 }
 
-/* HTTP: parsed request → structured JSON */
-static int hello_http(void *data, const fluxipc_http_request_t *req,
-                      fluxipc_http_response_t *resp)
+/* JSON: parsed request → cJSON response (HTTP + local call) */
+static int hello_json(void *data, const fluxipc_json_request_t *req,
+                      fluxipc_json_response_t *resp)
 {
-    const char *name = "World";
-    const cJSON *v = req->json
-        ? cJSON_GetObjectItemCaseSensitive(req->json, "name") : NULL;
-    if (cJSON_IsString(v) && v->valuestring) name = v->valuestring;
+    const char *name = fluxipc_json_str(req, "name", "World");
 
     cJSON *o = cJSON_CreateObject();
     cJSON_AddStringToObject(o, "message", "Hello");
@@ -123,10 +120,9 @@ int main(void)
     /* Full method in one call: metadata + both handlers. */
     fluxipc_register_method("/greet/hello", &FLUXIPC_METHOD(
         hello_ipc,          /* socket / CLI: raw bytes */
-        hello_http,         /* HTTP: JSON              */
+        hello_json,         /* JSON: HTTP + local call */
         "Say hello",
-        "{\"type\":\"object\",\"properties\":"
-        "{\"name\":{\"type\":\"string\"}}}",
+        FLUXIPC_SCHEMA(FLUXIPC_PROP_STR("name")),
         FLUXIPC_M_GET | FLUXIPC_M_POST));
 
     /* ...or the classic main-branch form (IPC only). */
@@ -142,9 +138,9 @@ For a larger server, a static table is even tidier:
 
 ```c
 static const fluxipc_endpoint_t endpoints[] = {
-    { "/system/info", FLUXIPC_METHOD(info_ipc, info_http,
+    { "/system/info", FLUXIPC_METHOD(info_ipc, info_json,
                                       "Process info", NULL, FLUXIPC_M_GET) },
-    { "/demo/add",    FLUXIPC_METHOD(add_ipc, add_http,
+    { "/demo/add",    FLUXIPC_METHOD(add_ipc, add_json,
                                       "Add two integers", NULL,
                                       FLUXIPC_M_GET | FLUXIPC_M_POST) },
 };
@@ -152,7 +148,7 @@ static const fluxipc_endpoint_t endpoints[] = {
 fluxipc_register_all(endpoints, sizeof(endpoints) / sizeof(endpoints[0]));
 ```
 
-`FLUXIPC_METHOD_D(ipc, http, data, summary, schema, methods)` is the same but
+`FLUXIPC_METHOD_D(ipc, json, data, summary, schema, methods)` is the same but
 also sets the per-leaf `data` pointer for stateful handlers.
 
 #### `main`-branch compatibility
@@ -177,21 +173,21 @@ static int hello_ipc(void *d, int argc, char **argv,
 FLUXIPC_STATIC("/greet/compiled", "say hello", 0, hello_ipc, NULL);
 ```
 
-#### Split registration (IPC and HTTP independently)
+#### Split registration (IPC and JSON independently)
 
 Registering the same path again **merges** into the existing leaf: only
 still-empty fields are filled, so an IPC-only registration can be completed
-later with `fluxipc_register_http()` — and vice versa.  The HTTP method mask is
-owned by the call that first attaches an HTTP handler, and existing non-empty
+later with `fluxipc_register_json()` — and vice versa.  The method mask is
+owned by the call that first attaches a JSON handler, and existing non-empty
 handlers, metadata and `data` are never overwritten.
 
 ```c
-/* Classic / IPC-only registration (http may also be NULL in a method). */
+/* Classic / IPC-only registration (json may also be NULL in a method). */
 fluxipc_register("/greet/hello", "Say hello", 0, hello_ipc, NULL);
 
-/* Add the HTTP side later (ipc is NULL). */
-fluxipc_register_http("/greet/hello", &FLUXIPC_METHOD(
-    NULL, hello_http, "Say hello", NULL, FLUXIPC_M_GET));
+/* Add the JSON side later (ipc is NULL). */
+fluxipc_register_json("/greet/hello", &FLUXIPC_METHOD(
+    NULL, hello_json, "Say hello", NULL, FLUXIPC_M_GET));
 ```
 
 A failed registration is atomic: it never leaves half-created containers
@@ -213,7 +209,7 @@ stay available when the tree must be mutated at runtime:
 | `fluxipc_tree_root()` | Root node (after `fluxipc_server_init`) |
 | `fluxipc_register(path, usage, slot_sz, handler, data)` | Classic main-branch registration (IPC) |
 | `fluxipc_register_method(path, &method)` | Register a full method; merges on repeat |
-| `fluxipc_register_http(path, &method)` | Register the HTTP side (merges, `ipc` usually NULL) |
+| `fluxipc_register_json(path, &method)` | Register the JSON side (merges, `ipc` usually NULL) |
 | `fluxipc_register_all(table, count)` | Register a static endpoint table |
 | `fluxipc_node_mkdir(parent, name)` | Get-or-create a container child (idempotent) |
 | `fluxipc_node_leaf(parent, name, &method)` | Create a leaf method under `parent` |
@@ -233,20 +229,21 @@ typedef int (*fluxipc_handler_fn)(void *data, int argc, char **argv,
                                   void *out_buf, size_t out_cap, size_t *out_len);
 ```
 
-**HTTP handler** — parsed request, cJSON response:
+**JSON handler** — parsed request, cJSON response:
 
 ```c
-typedef int (*fluxipc_http_handler_fn)(void *data,
-                                       const fluxipc_http_request_t *req,
-                                       fluxipc_http_response_t *resp);
+typedef int (*fluxipc_json_handler_fn)(void *data,
+                                       const fluxipc_json_request_t *req,
+                                       fluxipc_json_response_t *resp);
 ```
 
-`fluxipc_http_request_t` carries the standard request fields plus the parsed
+`fluxipc_json_request_t` carries the standard request fields plus the parsed
 JSON body:
 
 | Field | Meaning |
 |-------|---------|
-| `method` | `"GET"`, `"POST"`, … |
+| `method` | original verb string, e.g. `"GET"` (for logging) |
+| `verb` | parsed `FLUXIPC_M_*` bit; use the macros below |
 | `path` | decoded namespace path, e.g. `/system/info` |
 | `query` / `query_count` | query parameters |
 | `headers` / `header_count` | HTTP headers |
@@ -254,11 +251,72 @@ JSON body:
 | `json` | parsed request body (`const cJSON *`), or `NULL` |
 | `data` | the method's `data` pointer |
 
-`fluxipc_http_response_t` has `status` (0 → 200), an owned `cJSON *json`, and
+The framework parses the verb string once, at the transport boundary.  Business
+code compares the parsed bit instead of calling `strcmp(req->method, ...)`:
+
+```c
+if (FLUXIPC_VERB_IS_WRITE(req)) {          /* POST / PUT / PATCH */
+    long rpm = fluxipc_json_int(req, "rpm", -1);
+}
+
+if (FLUXIPC_VERB_IS(req, FLUXIPC_M_DELETE)) {
+    /* ... */
+}
+```
+
+Common field access is provided by the framework and reads the JSON body first,
+then query parameters:
+
+```c
+const char *name = fluxipc_json_str(req, "name", "World");
+long        n    = fluxipc_json_int(req, "n", 0);
+double      d    = fluxipc_json_double(req, "ratio", 1.0);
+int         ok   = fluxipc_json_bool(req, "enabled", 0);
+int         has  = fluxipc_json_has(req, "name");
+```
+
+Error replies are built by the framework too; pass an errno (or an explicit
+positive status) and a message:
+
+```c
+return fluxipc_json_error(resp, -EINVAL, "level must be 0-5");
+return fluxipc_json_error(resp, -EBUSY,  "motor is disabled");
+return fluxipc_json_error(resp, 409,     "custom conflict");
+```
+
+`fluxipc_json_response_t` has `status` (0 → 200), an owned `cJSON *json`, and
 an optional `content_type`.
 
-The two transports never share a return style: **IPC returns raw bytes, HTTP
-returns JSON.**
+By default the two representations keep separate return styles: **IPC returns
+raw bytes, JSON returns cJSON.**  `fluxipc_call_json()` adds an opt-in JSON
+representation over the Unix socket: it invokes the leaf's JSON handler and
+serialises its response, so there is still only one JSON producer.
+
+### JSON Schema helpers
+
+`fluxipc_method_t.schema` is standard JSON Schema text.  It is part of the
+public contract: it is served in the container manifest, embedded in
+`/openapi.json`, and used to bind positional `CALL_JSON` arguments.  The
+top-level `"type":"object"` is therefore not redundant — it states that the
+request body is an object and keeps the OpenAPI output precise.
+
+To avoid escaped string literals, use the helper macros:
+
+```c
+FLUXIPC_SCHEMA(
+    FLUXIPC_PROP_INT("a") "," FLUXIPC_PROP_INT("b"))
+
+FLUXIPC_SCHEMA(FLUXIPC_PROP_STR("name"))
+FLUXIPC_SCHEMA(FLUXIPC_PROP_NUMBER("offset"))
+FLUXIPC_SCHEMA(FLUXIPC_PROP_ARRAY("args", "string"))
+```
+
+The macros expand to normal JSON Schema text; you can still pass a full
+hand-written schema when you need `required`, descriptions, constraints, etc.
+
+The older `fluxipc_http_request_t`, `fluxipc_http_response_t`,
+`fluxipc_http_handler_fn` and `fluxipc_register_http` names remain as
+compatibility aliases.
 
 ---
 
@@ -356,8 +414,17 @@ Same handler, different transport.
 ```bash
 fluxipc-cli example_server -c /system/info
 fluxipc-cli example_server -c /demo/arithmetic/add 7 3
+fluxipc-cli example_server --json /system/info
+fluxipc-cli example_server --json /demo/arithmetic/add '{"a":7,"b":3}'
+fluxipc-cli example_server --json /demo/arithmetic/add 7 3
+fluxipc-cli example_server --json -X PUT /module/sensor/config '{"rate_hz":20}'
 fluxipc-cli example_server --list
 ```
+
+For `--json`, a single `{...}`/`[...]` argument is the JSON request body,
+`key=value` arguments become query parameters, and bare arguments are
+bound positionally to the endpoint's JSON Schema properties in declaration
+order (a trailing array property collects the remaining arguments).
 
 ### Interactive shell
 
@@ -487,7 +554,7 @@ server (see below).
 | `fluxipc_server_init(prog, http_port)` | Init socket + optional HTTP (0 = off) |
 | `fluxipc_register(path, usage, slot_sz, handler, data)` | Classic main-branch registration (IPC) |
 | `fluxipc_register_method(path, method)` | Register a full method; merges on repeat |
-| `fluxipc_register_http(path, method)` | Register the HTTP side of an endpoint |
+| `fluxipc_register_json(path, method)` | Register the JSON side of an endpoint |
 | `fluxipc_register_all(table, count)` | Register a static `fluxipc_endpoint_t` table |
 | `FLUXIPC_STATIC(path, usage, slot, handler, data)` | Compile-time endpoint (constructor-queued) |
 | `fluxipc_tree_root()` | Root node |
@@ -506,9 +573,20 @@ server (see below).
 
 | Function | Description |
 |----------|-------------|
-| `fluxipc_call(sock, path, argc, argv, out, cap, len)` | Low-level socket call |
+| `fluxipc_call(sock, path, argc, argv, out, cap, len)` | Low-level socket call (raw bytes) |
+| `fluxipc_call_json(sock, path, method, paramc, params, &out, &len)` | Call via IPC, return the JSON handler's response |
 | `fluxipc_list_endpoints(prog, cb, data)` | Enumerate via the server socket |
 | `fluxipc_interactive_init(prog)` | Enter the readline REPL |
+
+### JSON handler helpers
+
+| Function / macro | Description |
+|------------------|-------------|
+| `fluxipc_json_str/int/double/bool(req, key, def)` | Read a field from the JSON body, then query parameters |
+| `fluxipc_json_has(req, key)` | Test whether a body or query field exists |
+| `fluxipc_json_error(resp, code, msg)` | Build `{"error":msg,"code":code}` and set the status |
+| `FLUXIPC_VERB_IS(req, mask)` | Test the parsed verb against `FLUXIPC_M_*` bits |
+| `FLUXIPC_VERB_IS_READ(req)` / `FLUXIPC_VERB_IS_WRITE(req)` | Common GET / write checks |
 
 ---
 
@@ -549,8 +627,9 @@ FluxIPC/
 
 ## Design Notes
 
-- **One tree, two handlers, two transports** — HTTP and the Unix socket both
-  resolve the same tree; each invokes the leaf's own `http` or `ipc` handler.
+- **One tree, two representations** — HTTP and the Unix socket both resolve the
+  same tree; raw IPC calls invoke `ipc`, structured JSON calls (HTTP or local)
+  invoke `json`.
 - **Registration is a mechanism, not a policy** — path-based helpers
   (`fluxipc_register_method`) create any missing containers, while the node
   primitives stay available.  The classic `fluxipc_register` signature and

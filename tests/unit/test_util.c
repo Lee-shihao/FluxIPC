@@ -6,6 +6,7 @@
  */
 
 #include "ut_common.h"
+#include <errno.h>
 #include <string.h>
 
 /* ── fluxipc_url_decode ──────────────────────────────────────────────────── */
@@ -309,6 +310,120 @@ static void test_query_exact_arena(void **state)
     assert_string_equal(kv[0].value, "1");
 }
 
+/* ── schema string macros ────────────────────────────────────────────────── */
+
+static void test_schema_macros(void **state)
+{
+    (void)state;
+    const char *text = FLUXIPC_SCHEMA(
+        FLUXIPC_PROP_INT("a") "," FLUXIPC_PROP_STR("b"));
+
+    cJSON *schema = cJSON_Parse(text);
+    assert_non_null(schema);
+    assert_string_equal(cJSON_GetObjectItem(schema, "type")->valuestring,
+                        "object");
+
+    cJSON *props = cJSON_GetObjectItem(schema, "properties");
+    assert_non_null(props);
+    assert_string_equal(cJSON_GetObjectItem(
+        cJSON_GetObjectItem(props, "a"), "type")->valuestring, "integer");
+    assert_string_equal(cJSON_GetObjectItem(
+        cJSON_GetObjectItem(props, "b"), "type")->valuestring, "string");
+    cJSON_Delete(schema);
+
+    schema = cJSON_Parse(FLUXIPC_SCHEMA(
+        FLUXIPC_PROP_ARRAY("args", "string")));
+    assert_non_null(schema);
+    cJSON *args = cJSON_GetObjectItem(
+        cJSON_GetObjectItem(schema, "properties"), "args");
+    assert_string_equal(cJSON_GetObjectItem(args, "type")->valuestring,
+                        "array");
+    assert_string_equal(cJSON_GetObjectItem(
+        cJSON_GetObjectItem(args, "items"), "type")->valuestring, "string");
+    cJSON_Delete(schema);
+}
+
+/* ── structured request helpers ──────────────────────────────────────────── */
+
+static void test_json_request_helpers(void **state)
+{
+    (void)state;
+
+    cJSON *body = cJSON_Parse(
+        "{\"s\":\"body\",\"n\":7,\"d\":1.5,\"b\":true,\"strnum\":\"42\"}");
+    assert_non_null(body);
+
+    fluxipc_kv_t query[] = {
+        { "q",      "query" },
+        { "n2",     "9"     },
+        { "flag",   "yes"   },
+        { "noflag", "off"   },
+    };
+    fluxipc_json_request_t req = {
+        .json        = body,
+        .query       = query,
+        .query_count = sizeof(query) / sizeof(query[0]),
+    };
+
+    assert_string_equal(fluxipc_json_str(&req, "s", "def"), "body");
+    assert_string_equal(fluxipc_json_str(&req, "q", "def"), "query");
+    assert_string_equal(fluxipc_json_str(&req, "missing", "def"), "def");
+
+    assert_int_equal(fluxipc_json_int(&req, "n", -1), 7);
+    assert_int_equal(fluxipc_json_int(&req, "n2", -1), 9);
+    assert_int_equal(fluxipc_json_int(&req, "strnum", -1), 42);
+    assert_int_equal(fluxipc_json_int(&req, "missing", -1), -1);
+
+    assert_true(fluxipc_json_double(&req, "d", -1) == 1.5);
+    assert_true(fluxipc_json_double(&req, "missing", -1) == -1);
+
+    assert_int_equal(fluxipc_json_bool(&req, "b", 0), 1);
+    assert_int_equal(fluxipc_json_bool(&req, "flag", 0), 1);
+    assert_int_equal(fluxipc_json_bool(&req, "noflag", 1), 0);
+    assert_int_equal(fluxipc_json_bool(&req, "missing", 1), 1);
+
+    assert_true(fluxipc_json_has(&req, "s"));
+    assert_true(fluxipc_json_has(&req, "q"));
+    assert_false(fluxipc_json_has(&req, "missing"));
+
+    req.verb = FLUXIPC_M_PUT;
+    assert_true(FLUXIPC_VERB_IS(&req, FLUXIPC_M_PUT));
+    assert_true(FLUXIPC_VERB_IS_WRITE(&req));
+    assert_false(FLUXIPC_VERB_IS_READ(&req));
+
+    cJSON_Delete(body);
+}
+
+static void test_json_error_helper(void **state)
+{
+    (void)state;
+    fluxipc_json_response_t resp = { 0 };
+
+    assert_int_equal(fluxipc_json_error(&resp, -EINVAL, "bad input"), 0);
+    assert_int_equal(resp.status, 400);
+    assert_string_equal(cJSON_GetObjectItem(resp.json, "error")->valuestring,
+                        "bad input");
+    assert_int_equal(cJSON_GetObjectItem(resp.json, "code")->valueint, -EINVAL);
+    cJSON_Delete(resp.json);
+    resp.json = NULL;
+
+    assert_int_equal(fluxipc_json_error(&resp, -EBUSY, "busy"), 0);
+    assert_int_equal(resp.status, 409);
+    cJSON_Delete(resp.json);
+    resp.json = NULL;
+
+    assert_int_equal(fluxipc_json_error(&resp, -ERANGE, "range"), 0);
+    assert_int_equal(resp.status, 422);
+    cJSON_Delete(resp.json);
+    resp.json = NULL;
+
+    assert_int_equal(fluxipc_json_error(&resp, 418, "teapot"), 0);
+    assert_int_equal(resp.status, 418);
+    cJSON_Delete(resp.json);
+
+    assert_int_equal(fluxipc_json_error(NULL, -EINVAL, "x"), -EINVAL);
+}
+
 int ut_util(void)
 {
     const struct CMUnitTest tests[] = {
@@ -328,6 +443,9 @@ int ut_util(void)
         cmocka_unit_test(test_url_decode_loop_sentinel),
         cmocka_unit_test(test_find_content_length_digit_boundaries),
         cmocka_unit_test(test_query_exact_arena),
+        cmocka_unit_test(test_schema_macros),
+        cmocka_unit_test(test_json_request_helpers),
+        cmocka_unit_test(test_json_error_helper),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }

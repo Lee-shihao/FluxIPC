@@ -5,13 +5,16 @@
  *
  * A FluxIPC server owns a namespace tree.  Every node is a container
  * (namespace) or a leaf (callable method).  A leaf exposes two independent
- * handlers invoked through two transports:
+ * representations:
  *
- *   • IPC  (Unix socket, CLI)  – positional argv, raw bytes out
- *   • HTTP (REST, JSON)        – parsed request, cJSON response
+ *   • IPC  (Unix socket, CLI)        – positional argv, raw bytes out
+ *   • JSON (HTTP + local JSON call)  – parsed request, cJSON response
  *
- * The two return styles are deliberately separate: IPC keeps the original
- * "formatted text buffer" contract, HTTP uses structured JSON.
+ * The default return styles are deliberately separate: IPC keeps the original
+ * "formatted text buffer" contract, while the JSON representation uses cJSON.
+ * Callers that want structured JSON over the Unix socket can use
+ * fluxipc_call_json(), which invokes the same JSON handler as HTTP without any
+ * HTTP/TCP traffic.
  */
 
 #include <stdint.h>
@@ -29,7 +32,7 @@ extern "C" {
 #define FLUXIPC_USAGE_MAX   256
 #define FLUXIPC_MAX_ARGS    32
 
-/* ─── HTTP method bitmask ─────────────────────────────────────────────────── */
+/* ─── Method bitmask (HTTP verbs, also used by local JSON calls) ──────────── */
 #define FLUXIPC_M_GET     (1u << 0)
 #define FLUXIPC_M_POST    (1u << 1)
 #define FLUXIPC_M_PUT     (1u << 2)
@@ -68,76 +71,163 @@ typedef int (*fluxipc_handler_fn)(void   *data,
                                   size_t  out_cap,
                                   size_t *out_len);
 
-/* ─── HTTP request / response ─────────────────────────────────────────────── */
+/* ─── JSON request / response ─────────────────────────────────────────────── */
 /**
- * Parsed HTTP request handed to a leaf's HTTP handler.
+ * Parsed JSON request handed to a leaf's structured handler.  The same request
+ * type is used by HTTP and by local IPC calls (`fluxipc_call_json`); business
+ * code should not care which transport produced it.
+ *
  * All pointers are borrowed for the duration of the call.
  */
 typedef struct {
-    const char          *method;      /* "GET","POST",...                    */
+    const char          *method;      /* original verb string, e.g. "PUT"     */
+    uint32_t             verb;        /* parsed FLUXIPC_M_* bit; use macros    */
     const char          *path;        /* decoded namespace path, e.g. /a/b    */
     fluxipc_node_t      *node;        /* matched leaf                         */
     const fluxipc_kv_t  *query;       /* query parameters                     */
     size_t               query_count;
-    const fluxipc_kv_t  *headers;     /* HTTP headers                         */
+    const fluxipc_kv_t  *headers;     /* HTTP headers (empty for local JSON)  */
     size_t               header_count;
     const char          *content_type;
     const char          *body;        /* raw request body                     */
     size_t               body_len;
     const cJSON         *json;        /* parsed request body (may be NULL)    */
     void                *data;        /* the method's data pointer            */
-} fluxipc_http_request_t;
+} fluxipc_json_request_t;
+
+/** Backward-compatible alias for code written against the HTTP API. */
+typedef fluxipc_json_request_t fluxipc_http_request_t;
 
 /**
- * Filled by the HTTP handler.  Ownership of @c json transfers to the server,
- * which serialises and then cJSON_Delete()s it.  Leave @c json NULL for an
- * empty body.  @c status defaults to 200 when 0.
+ * Filled by a structured handler.  Ownership of @c json transfers to the
+ * server, which serialises and then cJSON_Delete()s it.  Leave @c json NULL
+ * for an empty body.  @c status defaults to 200 when 0.
  */
 typedef struct {
-    int         status;       /* HTTP status code; 0 → 200                    */
+    int         status;       /* response status; 0 → 200                     */
     cJSON      *json;         /* response body (server takes ownership)       */
     const char *content_type; /* NULL → "application/json; charset=utf-8"     */
-} fluxipc_http_response_t;
+} fluxipc_json_response_t;
 
-/** HTTP leaf handler. @return 0 or negative errno (→ HTTP 5xx). */
-typedef int (*fluxipc_http_handler_fn)(void                          *data,
-                                       const fluxipc_http_request_t  *req,
-                                       fluxipc_http_response_t       *resp);
+/** Backward-compatible alias for code written against the HTTP API. */
+typedef fluxipc_json_response_t fluxipc_http_response_t;
+
+/**
+ * Structured leaf handler.  Invoked for HTTP requests and for local
+ * `fluxipc_call_json()` calls.  @return 0 or negative errno.
+ */
+typedef int (*fluxipc_json_handler_fn)(void                          *data,
+                                       const fluxipc_json_request_t  *req,
+                                       fluxipc_json_response_t       *resp);
+
+/** Backward-compatible alias. */
+typedef fluxipc_json_handler_fn fluxipc_http_handler_fn;
+
+/* ─── Request helpers ────────────────────────────────────────────────────── */
+
+/**
+ * Read a field from the parsed JSON body first, then from query parameters.
+ * @return the value, or @p def when absent.
+ */
+const char *fluxipc_json_str(const fluxipc_json_request_t *req,
+                             const char *key, const char *def);
+long        fluxipc_json_int(const fluxipc_json_request_t *req,
+                             const char *key, long def);
+double      fluxipc_json_double(const fluxipc_json_request_t *req,
+                                const char *key, double def);
+int         fluxipc_json_bool(const fluxipc_json_request_t *req,
+                              const char *key, int def);
+int         fluxipc_json_has(const fluxipc_json_request_t *req,
+                             const char *key);
+
+/**
+ * Build a JSON error response: `{"error": msg, "code": code}`.
+ *
+ * @p code may be a negative errno (mapped to a response status) or a positive
+ * explicit status (e.g. 409).  Ownership of the built cJSON object transfers
+ * to the server.
+ * @return 0 on success, -ENOMEM on allocation failure.
+ */
+int fluxipc_json_error(fluxipc_json_response_t *resp, int code,
+                       const char *msg);
+
+/** True when the request verb contains any bit in @p mask. */
+#define FLUXIPC_VERB_IS(req, mask)  (((req)->verb & (mask)) != 0)
+/** True for GET. */
+#define FLUXIPC_VERB_IS_READ(req)   FLUXIPC_VERB_IS((req), FLUXIPC_M_GET)
+/** True for POST, PUT or PATCH. */
+#define FLUXIPC_VERB_IS_WRITE(req)  FLUXIPC_VERB_IS((req), \
+                                     FLUXIPC_M_POST | FLUXIPC_M_PUT | \
+                                     FLUXIPC_M_PATCH)
+
+/* ─── JSON Schema helpers ─────────────────────────────────────────────────── */
+/**
+ * Build a compact JSON Schema object for a method's structured request body.
+ * The result is ordinary JSON Schema text (used by OpenAPI, the manifest and
+ * positional CALL_JSON binding):
+ *
+ *     .schema = FLUXIPC_SCHEMA(
+ *         FLUXIPC_PROP_INT("a") ","
+ *         FLUXIPC_PROP_INT("b"))
+ *
+ * `type:object` is kept intentionally: it is the standard way to state that
+ * the request body is an object, and OpenAPI clients rely on it.  For a
+ * hand-written schema simply pass the JSON string directly.
+ */
+#define FLUXIPC_SCHEMA(...) \
+    "{\"type\":\"object\",\"properties\":{" __VA_ARGS__ "}}"
+
+/** One schema property with an explicit JSON Schema type string. */
+#define FLUXIPC_PROP(name, type) \
+    "\"" name "\":{\"type\":\"" type "\"}"
+
+#define FLUXIPC_PROP_INT(name)     FLUXIPC_PROP(name, "integer")
+#define FLUXIPC_PROP_NUMBER(name)  FLUXIPC_PROP(name, "number")
+#define FLUXIPC_PROP_STR(name)     FLUXIPC_PROP(name, "string")
+#define FLUXIPC_PROP_BOOL(name)    FLUXIPC_PROP(name, "boolean")
+
+/** Array property with a scalar item type (e.g. "string"). */
+#define FLUXIPC_PROP_ARRAY(name, item_type) \
+    "\"" name "\":{\"type\":\"array\",\"items\":{\"type\":\"" \
+    item_type "\"}}"
 
 /* ─── Method descriptor ───────────────────────────────────────────────────── */
 /**
  * Metadata + implementation of a leaf.
  *
- * Both @c ipc and @c http are optional, but a leaf must provide at least one.
+ * Both @c ipc and @c json are optional, but a leaf must provide at least one.
  * @c summary / @c description / @c schema are copied by the library.  @c schema
- * is an optional JSON Schema (draft 2020-12) string for the HTTP body.
+ * is an optional JSON Schema (draft 2020-12) string for the structured body.
  */
 typedef struct {
-    const char             *summary;
-    const char             *description;
-    const char             *schema;
-    uint32_t                methods;   /* FLUXIPC_M_*; 0 → FLUXIPC_M_DEFAULT */
-    fluxipc_handler_fn      ipc;       /* socket / CLI (raw bytes)           */
-    fluxipc_http_handler_fn http;      /* HTTP (JSON)                        */
-    void                   *data;
+    const char              *summary;
+    const char              *description;
+    const char              *schema;
+    uint32_t                 methods;   /* FLUXIPC_M_*; 0 → FLUXIPC_M_DEFAULT */
+    fluxipc_handler_fn       ipc;       /* socket / CLI (raw bytes)            */
+    union {
+        fluxipc_json_handler_fn json;   /* structured JSON (HTTP + local)      */
+        fluxipc_json_handler_fn http;   /* backward-compatible alias           */
+    };
+    void                    *data;
 } fluxipc_method_t;
 
 /**
- * Convenience initialiser: FLUXIPC_METHOD(ipc_fn, http_fn, summary, schema,
+ * Convenience initialiser: FLUXIPC_METHOD(ipc_fn, json_fn, summary, schema,
  * methods).  Produces a compound literal, so it can be passed by address to
  * fluxipc_node_leaf() / fluxipc_register_method() or stored in a static table:
  *
  *     fluxipc_register_method("/greet/hello", &FLUXIPC_METHOD(
- *         hello_ipc, hello_http, "Say hello", NULL, FLUXIPC_M_GET));
+ *         hello_ipc, hello_json, "Say hello", NULL, FLUXIPC_M_GET));
  */
-#define FLUXIPC_METHOD(ipc_fn, http_fn, sum, schema_json, masks) \
-    (fluxipc_method_t){ .ipc = (ipc_fn), .http = (http_fn), \
+#define FLUXIPC_METHOD(ipc_fn, json_fn, sum, schema_json, masks) \
+    (fluxipc_method_t){ .ipc = (ipc_fn), .json = (json_fn), \
                         .summary = (sum), .schema = (schema_json), \
                         .methods = (masks) }
 
 /** Like FLUXIPC_METHOD() but also sets the per-leaf @c data pointer. */
-#define FLUXIPC_METHOD_D(ipc_fn, http_fn, data_ptr, sum, schema_json, masks) \
-    (fluxipc_method_t){ .ipc = (ipc_fn), .http = (http_fn), \
+#define FLUXIPC_METHOD_D(ipc_fn, json_fn, data_ptr, sum, schema_json, masks) \
+    (fluxipc_method_t){ .ipc = (ipc_fn), .json = (json_fn), \
                         .data = (data_ptr), \
                         .summary = (sum), .schema = (schema_json), \
                         .methods = (masks) }
@@ -177,11 +267,11 @@ fluxipc_node_t *fluxipc_node_find(fluxipc_node_t *parent, const char *name);
  *
  * Registering the same path again is allowed and merges the two calls: only
  * still-empty handlers/metadata are filled, so an IPC-only registration can be
- * completed later by an HTTP-only one (and vice versa).  The HTTP method mask
- * belongs to whichever call first attaches an HTTP handler.
+ * completed later by a JSON-only one (and vice versa).  The method mask
+ * belongs to whichever call first attaches a JSON handler.
  *
  * @param path    absolute path, e.g. "/a/b/c" (leading '/' required).
- * @param method  metadata + at least one handler (ipc and/or http).
+ * @param method  metadata + at least one handler (ipc and/or json).
  * @return borrowed leaf handle, or NULL with errno set
  *         (EINVAL bad path/method, EEXIST name is a container, ENOMEM).
  */
@@ -195,8 +285,8 @@ fluxipc_node_t *fluxipc_register_method(const char *path,
  *
  * @p usage becomes the leaf summary.  @p slot_sz is accepted for source
  * compatibility only: the shared-memory slots of the old architecture are gone
- * and the value is ignored.  The HTTP side can be added later with
- * fluxipc_register_http(); re-registering the same path merges instead of
+ * and the value is ignored.  The structured JSON side can be added later with
+ * fluxipc_register_json(); re-registering the same path merges instead of
  * overwriting.
  *
  * @return borrowed leaf handle, or NULL with errno set.
@@ -206,15 +296,20 @@ fluxipc_node_t *fluxipc_register(const char *path, const char *usage,
                                  fluxipc_handler_fn handler, void *data);
 
 /**
- * Register the HTTP side of an endpoint (the @c ipc field is normally NULL).
- * Requires @c method->http.  Merges into an existing leaf of the same path, so
- * it is the natural companion for an earlier fluxipc_register() call:
+ * Register the structured JSON side of an endpoint (the @c ipc field is
+ * normally NULL).  Requires @c method->json.  Merges into an existing leaf of
+ * the same path, so it is the natural companion for an earlier
+ * fluxipc_register() call:
  *
  *     fluxipc_register     ("/greet/hello", "Say hello", 0, hello_ipc, NULL);
- *     fluxipc_register_http("/greet/hello", &FLUXIPC_METHOD(NULL, hello_http, ...));
+ *     fluxipc_register_json("/greet/hello", &FLUXIPC_METHOD(NULL, hello_json, ...));
  *
  * @return borrowed leaf handle, or NULL with errno set.
  */
+fluxipc_node_t *fluxipc_register_json(const char *path,
+                                      const fluxipc_method_t *method);
+
+/** Backward-compatible alias for fluxipc_register_json(). */
 fluxipc_node_t *fluxipc_register_http(const char *path,
                                       const fluxipc_method_t *method);
 
@@ -362,6 +457,28 @@ int fluxipc_list_endpoints(const char *prog_name,
 int fluxipc_call(const char *sock_path, const char *ipc_path,
                  int argc, char **argv,
                  void *out_buf, size_t out_cap, size_t *out_len);
+
+/**
+ * Call an endpoint over the Unix socket and return its JSON representation.
+ *
+ * The server reuses the leaf's JSON handler, so there is no HTTP/TCP traffic
+ * and no duplicated JSON construction.  If the leaf has no JSON handler the
+ * call returns -ENOSYS and *out still contains a valid JSON error document.
+ *
+ * @param sock_path  server socket path
+ * @param ipc_path   endpoint path, e.g. "/system/info"
+ * @param method     verb for the handler (GET/POST/...); NULL/empty → "GET"
+ * @param paramc     number of request parameters (endpoint path excluded)
+ * @param params     one JSON document, several "key=value" query pairs, or
+ *                   positional values bound to the leaf's schema properties
+ * @param out        receives a malloc'd, NUL-terminated JSON document
+ * @param out_len    receives the document length (may be NULL)
+ * @return status from the handler (0 on success, negative errno on error)
+ */
+int fluxipc_call_json(const char *sock_path, const char *ipc_path,
+                      const char *method,
+                      int paramc, char **params,
+                      char **out, size_t *out_len);
 
 #ifdef __cplusplus
 }

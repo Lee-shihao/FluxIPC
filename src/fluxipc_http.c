@@ -428,8 +428,9 @@ static void route_request(fluxipc_ctx_t *ctx, http_buf_t *out,
     int qn = fluxipc_parse_query(qraw, qlen, qkv, HTTP_MAX_QUERY,
                          qarena, sizeof(qarena));
 
-    fluxipc_http_request_t rq = {
+    fluxipc_json_request_t rq = {
         .method       = effective_method,
+        .verb         = want,
         .path         = path,
         .node         = node,
         .query        = qkv,
@@ -442,7 +443,7 @@ static void route_request(fluxipc_ctx_t *ctx, http_buf_t *out,
         .json         = json,
         .data         = node->method.data,
     };
-    fluxipc_http_response_t rs = { 0 };
+    fluxipc_json_response_t rs = { 0 };
 
     int rc = fluxipc_dispatch_http(ctx, &rq, &rs);
 

@@ -18,12 +18,19 @@
  *            bytes of NUL-terminated argv strings.
  * Response = fluxipc_resp_hdr_t, then `data_len` payload bytes.
  *
- * op == FLUXIPC_OP_CALL → invoke the leaf's IPC handler (raw byte reply)
- * op == FLUXIPC_OP_LIST → return the whole leaf manifest (JSON reply)
+ * op == FLUXIPC_OP_CALL      → invoke the leaf's IPC handler (raw byte reply)
+ * op == FLUXIPC_OP_LIST      → return the whole leaf manifest (JSON reply)
+ * op == FLUXIPC_OP_CALL_JSON → invoke the leaf's JSON handler, reply is JSON
+ *
+ * For CALL_JSON the argument block is `method\0` followed by NUL-terminated
+ * parameters.  A single parameter starting with '{' or '[' is the JSON body;
+ * `key=value` parameters become query pairs; bare parameters are positional
+ * and are bound to the leaf's JSON Schema properties in declaration order.
  */
 #define FLUXIPC_PROTO_MAGIC   0x464C5832UL  /* "FLX2" (bump on protocol change) */
 #define FLUXIPC_OP_CALL       1
 #define FLUXIPC_OP_LIST       2
+#define FLUXIPC_OP_CALL_JSON  3
 
 typedef struct {
     uint32_t magic;
@@ -130,9 +137,31 @@ int fluxipc_dispatch_ipc(fluxipc_ctx_t *ctx, const char *path,
                          int argc, char **argv,
                          void *out, size_t out_cap, size_t *out_len);
 
-/** Invoke a leaf's HTTP handler (JSON). @return handler rc or -ENOSYS. */
-int fluxipc_dispatch_http(fluxipc_ctx_t *ctx, fluxipc_http_request_t *req,
-                          fluxipc_http_response_t *resp);
+/** Invoke a leaf's JSON handler. @return handler rc or -ENOSYS. */
+int fluxipc_dispatch_http(fluxipc_ctx_t *ctx, fluxipc_json_request_t *req,
+                          fluxipc_json_response_t *resp);
+
+/**
+ * Invoke a leaf's JSON handler from the local JSON transport and serialise the
+ * response body.  *out is a malloc'd, NUL-terminated JSON document owned by
+ * the caller.  Error results are returned as a JSON problem document too.
+ * @return handler rc (0 or negative errno).
+ */
+int fluxipc_dispatch_json(fluxipc_ctx_t *ctx, const char *path,
+                          const char *method,
+                          const fluxipc_kv_t *query, size_t query_count,
+                          const char *body, size_t body_len,
+                          const cJSON *json,
+                          char **out, size_t *out_len);
+
+/**
+ * Bind positional CALL_JSON arguments to the leaf's JSON Schema properties,
+ * in declaration order.  A trailing array property consumes all remaining
+ * arguments.  Returns 0 and a new cJSON object, or a negative errno:
+ * -EINVAL (no/invalid schema) or -E2BIG (more args than properties).
+ */
+int fluxipc_json_bind_positional(fluxipc_ctx_t *ctx, const char *path,
+                                 int argc, char **argv, cJSON **out);
 
 /**
  * Build a JSON manifest of every leaf at or below @p node.

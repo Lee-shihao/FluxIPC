@@ -51,6 +51,7 @@ static void test_magic_constant(void **state)
     assert_int_equal(FLUXIPC_PROTO_MAGIC, 0x464C5832UL);
     assert_int_equal(FLUXIPC_OP_CALL, 1);
     assert_int_equal(FLUXIPC_OP_LIST, 2);
+    assert_int_equal(FLUXIPC_OP_CALL_JSON, 3);
 }
 
 int ut_protocol(void)

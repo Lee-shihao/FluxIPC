@@ -6,7 +6,10 @@
 
 #include "fluxipc_internal.h"
 
+#include <errno.h>
+#include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 static int hexval(int c)
 {
@@ -106,5 +109,128 @@ size_t fluxipc_find_content_length(const char *buf, size_t hbytes)
         }
         line = eol + 2;
     }
+    return 0;
+}
+
+
+/* ─── Structured request helpers ──────────────────────────────────────────── */
+
+static const cJSON *json_field(const fluxipc_json_request_t *req,
+                               const char *key)
+{
+    if (!req || !key || !req->json) return NULL;
+    return cJSON_GetObjectItemCaseSensitive(req->json, key);
+}
+
+static const char *query_field(const fluxipc_json_request_t *req,
+                               const char *key)
+{
+    if (!req || !key) return NULL;
+    for (size_t i = 0; i < req->query_count; i++)
+        if (req->query[i].key && strcmp(req->query[i].key, key) == 0)
+            return req->query[i].value;
+    return NULL;
+}
+
+static int bool_from_string(const char *s, int def)
+{
+    if (!s) return def;
+    if (strcasecmp(s, "true")  == 0 || strcasecmp(s, "yes") == 0 ||
+        strcasecmp(s, "on")    == 0 || strcmp(s, "1") == 0)
+        return 1;
+    if (strcasecmp(s, "false") == 0 || strcasecmp(s, "no") == 0 ||
+        strcasecmp(s, "off")   == 0 || strcmp(s, "0") == 0)
+        return 0;
+    return def;
+}
+
+const char *fluxipc_json_str(const fluxipc_json_request_t *req,
+                             const char *key, const char *def)
+{
+    const cJSON *v = json_field(req, key);
+    if (cJSON_IsString(v) && v->valuestring) return v->valuestring;
+
+    const char *q = query_field(req, key);
+    return q ? q : def;
+}
+
+long fluxipc_json_int(const fluxipc_json_request_t *req,
+                      const char *key, long def)
+{
+    const cJSON *v = json_field(req, key);
+    if (cJSON_IsNumber(v)) return (long)v->valuedouble;
+    if (cJSON_IsString(v) && v->valuestring)
+        return strtol(v->valuestring, NULL, 10);
+    if (cJSON_IsBool(v)) return cJSON_IsTrue(v) ? 1 : 0;
+
+    const char *q = query_field(req, key);
+    return q ? strtol(q, NULL, 10) : def;
+}
+
+double fluxipc_json_double(const fluxipc_json_request_t *req,
+                           const char *key, double def)
+{
+    const cJSON *v = json_field(req, key);
+    if (cJSON_IsNumber(v)) return v->valuedouble;
+    if (cJSON_IsString(v) && v->valuestring)
+        return strtod(v->valuestring, NULL);
+
+    const char *q = query_field(req, key);
+    return q ? strtod(q, NULL) : def;
+}
+
+int fluxipc_json_bool(const fluxipc_json_request_t *req,
+                      const char *key, int def)
+{
+    const cJSON *v = json_field(req, key);
+    if (cJSON_IsBool(v)) return cJSON_IsTrue(v) ? 1 : 0;
+    if (cJSON_IsNumber(v)) return v->valuedouble != 0;
+    if (cJSON_IsString(v) && v->valuestring)
+        return bool_from_string(v->valuestring, def);
+
+    const char *q = query_field(req, key);
+    return q ? bool_from_string(q, def) : def;
+}
+
+int fluxipc_json_has(const fluxipc_json_request_t *req, const char *key)
+{
+    return json_field(req, key) != NULL || query_field(req, key) != NULL;
+}
+
+/* ─── Structured error response ───────────────────────────────────────────── */
+
+static int status_from_code(int code)
+{
+    if (code > 0) return code;
+
+    switch (-code) {
+        case EINVAL:  return 400;
+        case EACCES:
+        case EPERM:   return 403;
+        case ENOENT:  return 404;
+        case EEXIST:
+        case EBUSY:
+        case EAGAIN:  return 409;
+        case ERANGE:
+        case E2BIG:   return 422;
+        case ENOSYS:  return 501;
+        default:      return 500;
+    }
+}
+
+int fluxipc_json_error(fluxipc_json_response_t *resp, int code,
+                       const char *msg)
+{
+    if (!resp) return -EINVAL;
+
+    cJSON *o = cJSON_CreateObject();
+    if (!o) return -ENOMEM;
+
+    cJSON_AddStringToObject(o, "error", msg ? msg : "error");
+    cJSON_AddNumberToObject(o, "code", code);
+
+    cJSON_Delete(resp->json);
+    resp->json   = o;
+    resp->status = status_from_code(code);
     return 0;
 }

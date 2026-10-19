@@ -95,7 +95,7 @@ static void test_openapi(void **state)
 {
     (void)state;
     fluxipc_node_t *root = fluxipc_tree_root();
-    fluxipc_method_t m = { .ipc = ut_ipc_echo, .http = ut_http_ok,
+    fluxipc_method_t m = { .ipc = ut_ipc_echo, .json = ut_http_ok,
                            .summary = "sum", .description = "desc",
                            .schema = "{\"type\":\"object\"}",
                            .methods = FLUXIPC_M_GET | FLUXIPC_M_PUT };
@@ -150,7 +150,7 @@ static void test_leaf_methods(void **state)
 {
     (void)state;
     fluxipc_node_t *root = fluxipc_tree_root();
-    fluxipc_method_t m = { .ipc = ut_ipc_echo, .http = ut_http_ok,
+    fluxipc_method_t m = { .ipc = ut_ipc_echo, .json = ut_http_ok,
                            .data = (void *)"H",
                            .methods = FLUXIPC_M_GET | FLUXIPC_M_DELETE };
     fluxipc_node_leaf(root, "leaf", &m);
@@ -178,7 +178,7 @@ static void test_head_has_no_body(void **state)
 {
     (void)state;
     fluxipc_node_t *root = fluxipc_tree_root();
-    fluxipc_method_t m = { .ipc = ut_ipc_echo, .http = ut_http_ok,
+    fluxipc_method_t m = { .ipc = ut_ipc_echo, .json = ut_http_ok,
                            .methods = FLUXIPC_M_GET };
     fluxipc_node_leaf(root, "h", &m);
 
@@ -196,7 +196,7 @@ static void test_json_body(void **state)
 {
     (void)state;
     fluxipc_node_t *root = fluxipc_tree_root();
-    fluxipc_method_t m = { .ipc = ut_ipc_echo, .http = ut_http_ok,
+    fluxipc_method_t m = { .ipc = ut_ipc_echo, .json = ut_http_ok,
                            .methods = FLUXIPC_M_POST };
     fluxipc_node_leaf(root, "post", &m);
 
@@ -243,6 +243,7 @@ static int http_json_probe(void *data, const fluxipc_http_request_t *req,
     resp->json = cJSON_CreateObject();
     if (resp->json) {
         cJSON_AddBoolToObject(resp->json, "has_json", req->json != NULL);
+        cJSON_AddNumberToObject(resp->json, "verb", (double)req->verb);
         cJSON_AddNumberToObject(resp->json, "header_count",
                                 (double)req->header_count);
         cJSON_AddNumberToObject(resp->json, "query_count",
@@ -320,7 +321,7 @@ static void test_all_method_allow(void **state)
         { "all",    FLUXIPC_M_ALL,                   "Allow: GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS" },
     };
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
-        fluxipc_method_t m = { .ipc = ut_ipc_echo, .http = ut_http_ok,
+        fluxipc_method_t m = { .ipc = ut_ipc_echo, .json = ut_http_ok,
                                .methods = cases[i].m };
         fluxipc_node_leaf(root, cases[i].name, &m);
 
@@ -339,7 +340,7 @@ static void test_unknown_method(void **state)
 {
     (void)state;
     fluxipc_node_t *root = fluxipc_tree_root();
-    fluxipc_method_t m = { .ipc = ut_ipc_echo, .http = ut_http_ok };
+    fluxipc_method_t m = { .ipc = ut_ipc_echo, .json = ut_http_ok };
     fluxipc_node_leaf(root, "leaf", &m);
 
     fluxipc_conn_t c;
@@ -354,7 +355,7 @@ static void test_openapi_all_verbs(void **state)
 {
     (void)state;
     fluxipc_node_t *root = fluxipc_tree_root();
-    fluxipc_method_t m = { .ipc = ut_ipc_echo, .http = ut_http_ok,
+    fluxipc_method_t m = { .ipc = ut_ipc_echo, .json = ut_http_ok,
                            .methods = FLUXIPC_M_ALL };
     fluxipc_node_leaf(root, "verbs", &m);   /* no summary/description/schema */
 
@@ -420,12 +421,28 @@ static void test_container_recursive_query(void **state)
     ut_conn_free(&c);
 }
 
+static void test_verb_is_parsed_once(void **state)
+{
+    (void)state;
+    fluxipc_method_t m = { .json = http_json_probe, .methods = FLUXIPC_M_ALL };
+    fluxipc_node_leaf(fluxipc_tree_root(), "verb", &m);
+
+    fluxipc_conn_t c;
+    assert_int_equal(do_http("GET /verb HTTP/1.1\r\nHost: x\r\n\r\n", &c), 1);
+    assert_true(resp_has(&c, "\"verb\":1"));
+    ut_conn_free(&c);
+
+    assert_int_equal(do_http("PUT /verb HTTP/1.1\r\nHost: x\r\n\r\n", &c), 1);
+    assert_true(resp_has(&c, "\"verb\":4"));
+    ut_conn_free(&c);
+}
+
 static void test_query_and_path_decode(void **state)
 {
     (void)state;
     fluxipc_node_t *root = fluxipc_tree_root();
     fluxipc_node_t *a = fluxipc_node_mkdir(root, "a");
-    fluxipc_method_t m = { .ipc = ut_ipc_echo, .http = http_json_probe };
+    fluxipc_method_t m = { .ipc = ut_ipc_echo, .json = http_json_probe };
     fluxipc_node_leaf(a, "leaf", &m);
 
     fluxipc_conn_t c;
@@ -448,7 +465,7 @@ static void test_body_parsing_variants(void **state)
 {
     (void)state;
     fluxipc_node_t *root = fluxipc_tree_root();
-    fluxipc_method_t m = { .ipc = ut_ipc_echo, .http = http_json_probe,
+    fluxipc_method_t m = { .ipc = ut_ipc_echo, .json = http_json_probe,
                            .methods = FLUXIPC_M_POST };
     fluxipc_node_leaf(root, "post", &m);
 
@@ -483,7 +500,7 @@ static void test_header_overflow(void **state)
 {
     (void)state;
     fluxipc_node_t *root = fluxipc_tree_root();
-    fluxipc_method_t m = { .ipc = ut_ipc_echo, .http = http_json_probe };
+    fluxipc_method_t m = { .ipc = ut_ipc_echo, .json = http_json_probe };
     fluxipc_node_leaf(root, "hdr", &m);
 
     char req[4096];
@@ -533,16 +550,16 @@ static void test_handler_error_mapping(void **state)
     static int einval = -EINVAL, enoent = -ENOENT, other = -999;
     fluxipc_node_t *root = fluxipc_tree_root();
 
-    fluxipc_method_t m1 = { .ipc = ut_ipc_echo, .http = http_negative,
+    fluxipc_method_t m1 = { .ipc = ut_ipc_echo, .json = http_negative,
                             .data = &einval };
     fluxipc_node_leaf(root, "einval", &m1);
-    fluxipc_method_t m2 = { .ipc = ut_ipc_echo, .http = http_negative,
+    fluxipc_method_t m2 = { .ipc = ut_ipc_echo, .json = http_negative,
                             .data = &enoent };
     fluxipc_node_leaf(root, "enoent", &m2);
-    fluxipc_method_t m3 = { .ipc = ut_ipc_echo, .http = http_negative,
+    fluxipc_method_t m3 = { .ipc = ut_ipc_echo, .json = http_negative,
                             .data = &other };
     fluxipc_node_leaf(root, "other", &m3);
-    fluxipc_method_t m4 = { .ipc = ut_ipc_echo, .http = http_negative_with_json };
+    fluxipc_method_t m4 = { .ipc = ut_ipc_echo, .json = http_negative_with_json };
     fluxipc_node_leaf(root, "withjson", &m4);
 
     fluxipc_conn_t c;
@@ -569,7 +586,7 @@ static void test_status_reasons(void **state)
 {
     (void)state;
     fluxipc_node_t *root = fluxipc_tree_root();
-    fluxipc_method_t m = { .ipc = ut_ipc_echo, .http = http_forced_status };
+    fluxipc_method_t m = { .ipc = ut_ipc_echo, .json = http_forced_status };
     fluxipc_node_leaf(root, "s", &m);
 
     const int codes[] = { 202, 409, 411, 415, 422, 501, 503, 299 };
@@ -586,9 +603,9 @@ static void test_empty_body_responses(void **state)
 {
     (void)state;
     fluxipc_node_t *root = fluxipc_tree_root();
-    fluxipc_method_t m1 = { .ipc = ut_ipc_echo, .http = http_empty_body };
+    fluxipc_method_t m1 = { .ipc = ut_ipc_echo, .json = http_empty_body };
     fluxipc_node_leaf(root, "empty", &m1);
-    fluxipc_method_t m2 = { .ipc = ut_ipc_echo, .http = http_empty_default_ct };
+    fluxipc_method_t m2 = { .ipc = ut_ipc_echo, .json = http_empty_default_ct };
     fluxipc_node_leaf(root, "empty2", &m2);
 
     fluxipc_conn_t c;
@@ -607,7 +624,7 @@ static void test_header_trailing_whitespace(void **state)
 {
     (void)state;
     fluxipc_node_t *root = fluxipc_tree_root();
-    fluxipc_method_t m = { .ipc = ut_ipc_echo, .http = ut_http_ok,
+    fluxipc_method_t m = { .ipc = ut_ipc_echo, .json = ut_http_ok,
                            .methods = FLUXIPC_M_POST };
     fluxipc_node_leaf(root, "tp", &m);
 
@@ -639,7 +656,7 @@ static void test_custom_status(void **state)
     (void)state;
     static int created = 201;
     fluxipc_node_t *root = fluxipc_tree_root();
-    fluxipc_method_t m = { .ipc = ut_ipc_echo, .http = http_custom_status,
+    fluxipc_method_t m = { .ipc = ut_ipc_echo, .json = http_custom_status,
                            .data = &created, .methods = FLUXIPC_M_POST };
     fluxipc_node_leaf(root, "create", &m);
 
@@ -667,6 +684,7 @@ int ut_http(void)
         cmocka_unit_test_setup_teardown(test_openapi_all_verbs, http_setup, http_teardown),
         cmocka_unit_test_setup_teardown(test_healthz_program_and_head, http_setup, http_teardown),
         cmocka_unit_test_setup_teardown(test_container_recursive_query, http_setup, http_teardown),
+        cmocka_unit_test_setup_teardown(test_verb_is_parsed_once, http_setup, http_teardown),
         cmocka_unit_test_setup_teardown(test_query_and_path_decode, http_setup, http_teardown),
         cmocka_unit_test_setup_teardown(test_body_parsing_variants, http_setup, http_teardown),
         cmocka_unit_test_setup_teardown(test_body_not_yet_received, http_setup, http_teardown),

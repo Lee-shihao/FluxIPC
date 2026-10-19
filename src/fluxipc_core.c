@@ -10,6 +10,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <stdio.h>
 #include <errno.h>
 #include <unistd.h>
@@ -138,7 +139,7 @@ fluxipc_node_t *fluxipc_node_leaf(fluxipc_node_t *parent,
                                   const fluxipc_method_t *method)
 {
     if (!g_ctx || !parent || !valid_segment(name) ||
-        !method || (!method->ipc && !method->http)) {
+        !method || (!method->ipc && !method->json)) {
         errno = EINVAL;
         return NULL;
     }
@@ -161,7 +162,7 @@ fluxipc_node_t *fluxipc_register_method(const char *path,
                                         const fluxipc_method_t *method)
 {
     if (!g_ctx || !path || path[0] != '/' || !method ||
-        (!method->ipc && !method->http) ||
+        (!method->ipc && !method->json) ||
         strlen(path) >= FLUXIPC_PATH_MAX) {
         errno = EINVAL;
         return NULL;
@@ -232,11 +233,17 @@ int fluxipc_register_all(const fluxipc_endpoint_t *endpoints, size_t count)
     return 0;
 }
 
+fluxipc_node_t *fluxipc_register_json(const char *path,
+                                      const fluxipc_method_t *method)
+{
+    if (!method || !method->json) { errno = EINVAL; return NULL; }
+    return fluxipc_register_method(path, method);
+}
+
 fluxipc_node_t *fluxipc_register_http(const char *path,
                                       const fluxipc_method_t *method)
 {
-    if (!method || !method->http) { errno = EINVAL; return NULL; }
-    return fluxipc_register_method(path, method);
+    return fluxipc_register_json(path, method);
 }
 
 /*
@@ -490,25 +497,30 @@ int fluxipc_dispatch_ipc(fluxipc_ctx_t *ctx, const char *path,
     return rc;
 }
 
-int fluxipc_dispatch_http(fluxipc_ctx_t *ctx, fluxipc_http_request_t *req,
-                          fluxipc_http_response_t *resp)
+static int dispatch_json_ex(fluxipc_ctx_t *ctx, fluxipc_json_request_t *req,
+                            fluxipc_json_response_t *resp,
+                            const char *transport, const char *event_method)
 {
-    fluxipc_http_handler_fn handler = NULL;
+    fluxipc_json_handler_fn handler = NULL;
     void                   *data    = NULL;
+
+    /* Parse the verb string once, at the framework boundary. */
+    if (req->verb == 0 && req->method)
+        req->verb = (uint32_t)fluxipc_method_to_mask(req->method);
 
     pthread_mutex_lock(&ctx->tree_lock);
     fluxipc_node_t *node = tree_find_path(ctx->root, req->path);
     req->node = node;
     if (node && node->is_leaf) {
-        handler   = node->method.http;
+        handler   = node->method.json;
         data      = node->method.data;
         req->data = data;
     }
     pthread_mutex_unlock(&ctx->tree_lock);
 
     fluxipc_event_t ev = {
-        .transport = "http",
-        .method    = req->method,
+        .transport = transport,
+        .method    = event_method,
         .path      = req->path,
         .matched   = handler ? 1 : 0,
     };
@@ -520,6 +532,184 @@ int fluxipc_dispatch_http(fluxipc_ctx_t *ctx, fluxipc_http_request_t *req,
     ev.json   = resp->json;
     if (ctx->post_hook) ctx->post_hook(&ev, ctx->hook_user);
     return rc;
+}
+
+int fluxipc_dispatch_http(fluxipc_ctx_t *ctx, fluxipc_json_request_t *req,
+                          fluxipc_json_response_t *resp)
+{
+    return dispatch_json_ex(ctx, req, resp, "http", req->method);
+}
+
+int fluxipc_dispatch_json(fluxipc_ctx_t *ctx, const char *path,
+                          const char *method,
+                          const fluxipc_kv_t *query, size_t query_count,
+                          const char *body, size_t body_len,
+                          const cJSON *json,
+                          char **out, size_t *out_len)
+{
+    if (!ctx || !path || !out || !out_len) return -EINVAL;
+    *out     = NULL;
+    *out_len = 0;
+
+    fluxipc_json_request_t req = {
+        .method       = method ? method : "GET",
+        .verb         = (uint32_t)fluxipc_method_to_mask(method ? method : "GET"),
+        .path         = path,
+        .query        = query,
+        .query_count  = query_count,
+        .content_type = body ? "application/json" : NULL,
+        .body         = body,
+        .body_len     = body_len,
+        .json         = json,
+    };
+    fluxipc_json_response_t resp = { 0 };
+
+    int rc = dispatch_json_ex(ctx, &req, &resp, "ipc", "CALL_JSON");
+
+    /* Always return a JSON document, including for errors. */
+    if (!resp.json) {
+        resp.json = cJSON_CreateObject();
+        if (!resp.json) return -ENOMEM;
+        if (rc < 0) {
+            cJSON_AddStringToObject(resp.json, "error",
+                                    rc == -ENOSYS
+                                        ? "endpoint has no JSON representation"
+                                        : strerror(-rc));
+            cJSON_AddNumberToObject(resp.json, "code", rc);
+            cJSON_AddStringToObject(resp.json, "path", path);
+        }
+    }
+
+    char *s = cJSON_PrintUnformatted(resp.json);
+    cJSON_Delete(resp.json);
+    if (!s) return -ENOMEM;
+
+    *out     = s;
+    *out_len = strlen(s);
+    return rc;
+}
+
+/* ─── Positional JSON arguments → schema-bound object ─────────────────────── */
+
+static cJSON *json_scalar_from_text(const cJSON *schema, const char *text)
+{
+    const cJSON *type = cJSON_GetObjectItemCaseSensitive(schema, "type");
+    const char  *t = cJSON_IsString(type) ? type->valuestring : NULL;
+
+    if (t && (strcmp(t, "integer") == 0 || strcmp(t, "number") == 0)) {
+        cJSON *n = cJSON_Parse(text);
+        if (cJSON_IsNumber(n)) return n;
+        cJSON_Delete(n);
+
+        char  *end = NULL;
+        double d = strtod(text, &end);
+        if (end != text && end && *end == '\0')
+            return cJSON_CreateNumber(d);
+        return NULL;
+    }
+    if (t && strcmp(t, "boolean") == 0) {
+        if (strcasecmp(text, "true") == 0 || strcmp(text, "1") == 0)
+            return cJSON_CreateTrue();
+        if (strcasecmp(text, "false") == 0 || strcmp(text, "0") == 0)
+            return cJSON_CreateFalse();
+        return NULL;
+    }
+    if (t && (strcmp(t, "object") == 0 || strcmp(t, "array") == 0)) {
+        cJSON *v = cJSON_Parse(text);
+        if (!v) return NULL;
+        if ((strcmp(t, "object") == 0 && !cJSON_IsObject(v)) ||
+            (strcmp(t, "array") == 0 && !cJSON_IsArray(v))) {
+            cJSON_Delete(v);
+            return NULL;
+        }
+        return v;
+    }
+    return cJSON_CreateString(text);
+}
+
+static cJSON *json_array_from_args(const cJSON *schema, char **argv, int argc)
+{
+    cJSON *arr = cJSON_CreateArray();
+    if (!arr) return NULL;
+
+    const cJSON *items = cJSON_GetObjectItemCaseSensitive(schema, "items");
+    for (int i = 0; i < argc; i++) {
+        cJSON *v = items ? json_scalar_from_text(items, argv[i])
+                         : cJSON_CreateString(argv[i]);
+        if (!v) { cJSON_Delete(arr); return NULL; }
+        cJSON_AddItemToArray(arr, v);
+    }
+    return arr;
+}
+
+int fluxipc_json_bind_positional(fluxipc_ctx_t *ctx, const char *path,
+                                 int argc, char **argv, cJSON **out)
+{
+    if (!ctx || !path || !out || argc < 1) return -EINVAL;
+    *out = NULL;
+
+    char *schema_text = NULL;
+    int   has_schema  = 0;
+
+    pthread_mutex_lock(&ctx->tree_lock);
+    fluxipc_node_t *node = tree_find_path(ctx->root, path);
+    if (node && node->is_leaf && node->method.schema) {
+        has_schema  = 1;
+        schema_text = strdup(node->method.schema);
+    }
+    pthread_mutex_unlock(&ctx->tree_lock);
+
+    if (!has_schema) return -EINVAL;
+    if (!schema_text) return -ENOMEM;
+
+    cJSON *schema = cJSON_Parse(schema_text);
+    free(schema_text);
+    if (!schema) return -EINVAL;
+
+    cJSON *props = cJSON_GetObjectItemCaseSensitive(schema, "properties");
+    if (!cJSON_IsObject(props) || !props->child) {
+        cJSON_Delete(schema);
+        return -EINVAL;
+    }
+
+    cJSON *bound = cJSON_CreateObject();
+    if (!bound) { cJSON_Delete(schema); return -ENOMEM; }
+
+    int used = 0;
+    for (cJSON *prop = props->child; prop && used < argc; prop = prop->next) {
+        const char *name = prop->string;
+        if (!name) continue;
+
+        const cJSON *type = cJSON_GetObjectItemCaseSensitive(prop, "type");
+        const char  *t = cJSON_IsString(type) ? type->valuestring : NULL;
+        cJSON       *value = NULL;
+
+        /* A trailing array property collects the remaining arguments. */
+        if (!prop->next && t && strcmp(t, "array") == 0) {
+            value = json_array_from_args(prop, argv + used, argc - used);
+            used  = argc;
+        } else {
+            value = json_scalar_from_text(prop, argv[used]);
+            used++;
+        }
+
+        if (!value) {
+            cJSON_Delete(bound);
+            cJSON_Delete(schema);
+            return -EINVAL;
+        }
+        cJSON_AddItemToObject(bound, name, value);
+    }
+
+    cJSON_Delete(schema);
+
+    if (used < argc) {
+        cJSON_Delete(bound);
+        return -E2BIG;
+    }
+
+    *out = bound;
+    return 0;
 }
 
 /* ─── fluxipc_set_request_hooks ────────────────────────────────────────────── */

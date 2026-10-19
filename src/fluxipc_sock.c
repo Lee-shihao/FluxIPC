@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <ctype.h>
 
 #define IPC_OUT_CAP (64 * 1024)
 #define IPC_ARG_MAX (1024 * 1024)
@@ -98,6 +99,98 @@ static int send_unix_response(fluxipc_conn_t *c, int32_t status,
     return r;
 }
 
+static int send_json_error(fluxipc_conn_t *c, int rc,
+                           const char *path, const char *msg)
+{
+    cJSON *o = cJSON_CreateObject();
+    if (!o) return -1;
+    cJSON_AddStringToObject(o, "error", msg);
+    cJSON_AddNumberToObject(o, "code", rc);
+    if (path) cJSON_AddStringToObject(o, "path", path);
+
+    char *s = cJSON_PrintUnformatted(o);
+    cJSON_Delete(o);
+    if (!s) return -1;
+
+    int r = send_unix_response(c, rc, s, (uint32_t)strlen(s));
+    free(s);
+    return r < 0 ? -1 : 1;
+}
+
+/* FLUXIPC_OP_CALL_JSON: method\0 followed by a JSON body, key=value pairs,
+ * or positional arguments bound to the leaf's JSON Schema properties. */
+static int sock_conn_json(fluxipc_ctx_t *ctx, fluxipc_conn_t *c,
+                          const char *path, int argc, char **argv)
+{
+    const char *method = "GET";
+    int first = 0;
+
+    if (argc > 0 && fluxipc_method_to_mask(argv[0]) != 0) {
+        method = argv[0];
+        first  = 1;
+    }
+
+    const char *body = NULL;
+    size_t      body_len = 0;
+    cJSON      *parsed = NULL;
+    fluxipc_kv_t query[FLUXIPC_MAX_ARGS];
+    size_t       query_count = 0;
+
+    if (argc - first == 1 &&
+        (argv[first][0] == '{' || argv[first][0] == '[')) {
+        body     = argv[first];
+        body_len = strlen(body);
+        parsed   = cJSON_ParseWithLength(body, body_len);
+        if (!parsed)
+            return send_json_error(c, -EINVAL, path, "invalid JSON body");
+    } else if (argc > first) {
+        int named = 0, positional = 0;
+        for (int i = first; i < argc; i++) {
+            if (strchr(argv[i], '=')) named++;
+            else                      positional++;
+        }
+
+        if (named && positional)
+            return send_json_error(c, -EINVAL, path,
+                                   "cannot mix key=value and positional arguments");
+
+        if (named) {
+            for (int i = first; i < argc; i++) {
+                char *eq = strchr(argv[i], '=');
+                if (!eq || eq == argv[i])
+                    return send_json_error(c, -EINVAL, path,
+                                           "expected key=value");
+                *eq = '\0';
+                query[query_count].key   = argv[i];
+                query[query_count].value = eq + 1;
+                query_count++;
+            }
+        } else {
+            int brc = fluxipc_json_bind_positional(ctx, path, argc - first,
+                                                   argv + first, &parsed);
+            if (brc < 0) {
+                const char *msg = brc == -E2BIG
+                    ? "too many positional arguments for the endpoint schema"
+                    : "positional arguments require a JSON schema with properties; "
+                      "use key=value or a JSON body";
+                return send_json_error(c, brc, path, msg);
+            }
+        }
+    }
+
+    char  *out = NULL;
+    size_t out_len = 0;
+    int rc = fluxipc_dispatch_json(ctx, path, method,
+                                   query, query_count,
+                                   body, body_len, parsed,
+                                   &out, &out_len);
+    cJSON_Delete(parsed);
+
+    int r = send_unix_response(c, rc, out, (uint32_t)out_len);
+    free(out);
+    return r < 0 ? -1 : 1;
+}
+
 int sock_conn_process(fluxipc_ctx_t *ctx, fluxipc_conn_t *c)
 {
     if (c->rlen < sizeof(fluxipc_req_hdr_t)) return 0;
@@ -123,9 +216,9 @@ int sock_conn_process(fluxipc_ctx_t *ctx, fluxipc_conn_t *c)
         free(body);
         return r < 0 ? -1 : 1;
     }
-    if (h.op != FLUXIPC_OP_CALL) return -1;
+    if (h.op != FLUXIPC_OP_CALL && h.op != FLUXIPC_OP_CALL_JSON)
+        return -1;
 
-    /* ── FLUXIPC_OP_CALL: invoke the leaf's IPC handler ── */
     char path[FLUXIPC_PATH_MAX];
     memcpy(path, c->rbuf + sizeof(h), h.path_len);
     path[h.path_len] = '\0';
@@ -135,10 +228,16 @@ int sock_conn_process(fluxipc_ctx_t *ctx, fluxipc_conn_t *c)
     const char *p   = c->rbuf + sizeof(h) + h.path_len;
     const char *end = p + h.arg_len;
     while (p < end && argc < FLUXIPC_MAX_ARGS) {
+        const char *nul = memchr(p, '\0', (size_t)(end - p));
+        if (!nul) return -1;
         argv[argc++] = (char *)p;
-        p += strlen(p) + 1;
+        p = nul + 1;
     }
 
+    if (h.op == FLUXIPC_OP_CALL_JSON)
+        return sock_conn_json(ctx, c, path, argc, argv);
+
+    /* ── FLUXIPC_OP_CALL: invoke the leaf's IPC handler ── */
     char *out = malloc(IPC_OUT_CAP);
     if (!out) return -1;
     size_t out_len = 0;
@@ -247,6 +346,40 @@ int fluxipc_call(const char *sock_path, const char *ipc_path,
 
     close(fd);
     return resp.status;
+}
+
+int fluxipc_call_json(const char *sock_path, const char *ipc_path,
+                      const char *method,
+                      int paramc, char **params,
+                      char **out, size_t *out_len)
+{
+    if (out)     *out = NULL;
+    if (out_len) *out_len = 0;
+
+    if (!out || paramc < 0 || paramc + 1 > FLUXIPC_MAX_ARGS)
+        return -EINVAL;
+
+    char method_buf[8];
+    size_t mi = 0;
+    if (method && method[0]) {
+        for (; method[mi] && mi < sizeof(method_buf) - 1; mi++)
+            method_buf[mi] = (char)toupper((unsigned char)method[mi]);
+        method_buf[mi] = '\0';
+        if (fluxipc_method_to_mask(method_buf) == 0) return -EINVAL;
+    } else {
+        snprintf(method_buf, sizeof(method_buf), "GET");
+    }
+
+    char *wire[FLUXIPC_MAX_ARGS];
+    int n = 0;
+    wire[n++] = method_buf;
+    for (int i = 0; i < paramc; i++) {
+        if (!params || !params[i]) return -EINVAL;
+        wire[n++] = params[i];
+    }
+
+    return sock_call_alloc(sock_path, FLUXIPC_OP_CALL_JSON, ipc_path,
+                           n, wire, out, out_len);
 }
 
 int sock_call_alloc(const char *sock_path, uint16_t op, const char *ipc_path,
