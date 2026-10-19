@@ -493,25 +493,37 @@ static void route_request(fluxipc_ctx_t *ctx, http_buf_t *out,
 
 int http_conn_process(fluxipc_ctx_t *ctx, fluxipc_conn_t *c)
 {
-    char *he = memmem(c->rbuf, c->rlen, "\r\n\r\n", 4);
-    if (!he) {
-        if (c->rlen > HTTP_HDR_MAX)
+    /*
+     * Parse the header boundary and Content-Length once.  Without this cache
+     * every partial body read would rescan the whole accumulated buffer.
+     * hdr_end == 0 is safe as "not parsed yet": a valid request line is never
+     * empty.
+     */
+    if (c->hdr_end == 0) {
+        char *he = memmem(c->rbuf, c->rlen, "\r\n\r\n", 4);
+        if (!he) {
+            if (c->rlen > HTTP_HDR_MAX)
+                return respond_problem(c, 431, "Request Header Fields Too Large",
+                                       "header section exceeds limit", NULL);
+            return 0;
+        }
+        size_t hbytes = (size_t)(he - c->rbuf);
+        if (hbytes > HTTP_HDR_MAX)
             return respond_problem(c, 431, "Request Header Fields Too Large",
                                    "header section exceeds limit", NULL);
-        return 0;
+
+        size_t content_length = fluxipc_find_content_length(c->rbuf, hbytes);
+        if (content_length > HTTP_BODY_MAX)
+            return respond_problem(c, 413, "Content Too Large",
+                                   "request body exceeds limit", NULL);
+
+        c->hdr_end  = hbytes;
+        c->body_len = content_length;
     }
-    size_t hbytes = (size_t)(he - c->rbuf);
-    if (hbytes > HTTP_HDR_MAX)
-        return respond_problem(c, 431, "Request Header Fields Too Large",
-                               "header section exceeds limit", NULL);
 
-    size_t content_length = fluxipc_find_content_length(c->rbuf, hbytes);
-    if (content_length > HTTP_BODY_MAX)
-        return respond_problem(c, 413, "Content Too Large",
-                               "request body exceeds limit", NULL);
-
-    c->hdr_end  = hbytes;
-    c->body_len = content_length;
+    size_t hbytes = c->hdr_end;
+    size_t content_length = c->body_len;
+    char  *he = c->rbuf + hbytes;
     size_t body_off = hbytes + 4;
     if (c->rlen < body_off + content_length)
         return 0;   /* wait for the rest of the body */
