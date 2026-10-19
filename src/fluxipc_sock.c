@@ -192,6 +192,7 @@ static int sock_conn_json(fluxipc_ctx_t *ctx, fluxipc_conn_t *c,
 int sock_conn_process(fluxipc_ctx_t *ctx, fluxipc_conn_t *c)
 {
     if (c->rlen < sizeof(fluxipc_req_hdr_t)) return 0;
+    if (c->need && c->rlen < c->need) return 0;
 
     fluxipc_req_hdr_t h;
     memcpy(&h, c->rbuf, sizeof(h));
