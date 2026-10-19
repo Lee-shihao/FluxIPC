@@ -114,10 +114,12 @@ check-tools:
 	@test -f "$(CMOCKA_LIBDIR)/libcmocka.so" || { \
 		echo "error: test toolchain missing; run 'make tools' first"; exit 1; }
 
+$(UT_BIN): include/fluxipc.h include/fluxipc_internal.h
 $(UT_BIN): check-tools $(UT_SRCS) $(UT_LIB_SRCS)
 	$(CC) $(TEST_CFLAGS) -o $@ $(UT_SRCS) $(UT_LIB_SRCS) $(TEST_LDFLAGS) \
 	    $(LDLIBS) $(CMOCKA_LDFLAGS)
 
+$(IT_BIN): include/fluxipc.h include/fluxipc_internal.h
 $(IT_BIN): $(IT_SRCS) $(TARGET_STATIC)
 	$(CC) $(CFLAGS) -o $@ $(IT_SRCS) $(TARGET_STATIC) $(LDFLAGS) $(LDLIBS)
 
@@ -133,11 +135,13 @@ it: $(IT_BIN) example_server
 
 # ASan/UBSan integration pair: both client and server are instrumented so
 # LeakSanitizer catches leaks in the real server lifecycle.
+$(IT_ASAN_BIN): include/fluxipc.h include/fluxipc_internal.h
 $(IT_ASAN_BIN): $(IT_SRCS) $(LIB_SRCS)
 	@mkdir -p $(ASAN_DIR)
 	$(CC) $(CFLAGS) $(ASAN_FLAGS) -o $@ $(IT_SRCS) $(LIB_SRCS) \
 	    $(LDFLAGS) $(LDLIBS) $(ASAN_FLAGS)
 
+$(IT_ASAN_SRV): include/fluxipc.h
 $(IT_ASAN_SRV): tests/example_server.c $(LIB_SRCS)
 	@mkdir -p $(ASAN_DIR)
 	$(CC) $(CFLAGS) $(ASAN_FLAGS) -o $@ tests/example_server.c $(LIB_SRCS) \
@@ -152,6 +156,7 @@ it-asan: $(IT_ASAN_BIN) $(IT_ASAN_SRV)
 	$(IT_ASAN_BIN)
 
 # Performance baseline: p50/p95/p99, throughput, server RSS.
+$(BENCH_BIN): include/fluxipc.h
 $(BENCH_BIN): $(BENCH_SRCS) $(TARGET_STATIC)
 	$(CC) $(CFLAGS) -o $@ $(BENCH_SRCS) $(TARGET_STATIC) $(LDFLAGS) $(LDLIBS)
 
@@ -204,6 +209,12 @@ $(TARGET_LIB): $(LIB_PIC_OBJS)
 	ln -sf $(TARGET_LIB) $(SONAME)
 	ln -sf $(TARGET_LIB) libfluxipc.so
 
+# Header changes must rebuild every dependent object; otherwise a struct
+# layout change (e.g. fluxipc_conn_t) can leave stale objects with mismatched
+# ABIs and cause crashes.
+$(LIB_OBJS) $(LIB_PIC_OBJS): include/fluxipc.h include/fluxipc_internal.h
+cli/fluxipc_cli.o: include/fluxipc.h
+
 src/%.pic.o: src/%.c
 	$(CC) $(CFLAGS) -fPIC -c -o $@ $<
 
@@ -225,6 +236,7 @@ $(TARGET_CLI): $(CLI_OBJS)
 
 # ── Examples ─────────────────────────────────────────
 
+example_server: include/fluxipc.h
 example_server: tests/example_server.c $(TARGET_STATIC)
 	$(CC) $(CFLAGS) -o $@ $< $(TARGET_STATIC) $(LDLIBS)
 
