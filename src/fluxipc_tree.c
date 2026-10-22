@@ -37,7 +37,6 @@ void tree_node_free(fluxipc_node_t *n)
 {
     if (!n) return;
     free((char *)n->method.summary);
-    free((char *)n->method.description);
     free(n);
 }
 
@@ -102,14 +101,13 @@ fluxipc_node_t *tree_mkdir(fluxipc_node_t *parent, const char *name)
     fluxipc_node_t *found = tree_find_child(parent, name);
     if (found) {
         /* a leaf and a container share one name slot in a directory */
-        if (found->is_leaf) { errno = EEXIST; return NULL; }
+        if (node_is_leaf(found)) { errno = EEXIST; return NULL; }
         return found;                 /* idempotent get-or-create */
     }
 
     fluxipc_node_t *n = node_alloc(name);
     if (!n) { errno = ENOMEM; return NULL; }
     n->parent = parent;
-    n->is_leaf = 0;
     set_full_path(n, parent, name);
 
     n->next_sibling = parent->children;
@@ -120,21 +118,20 @@ fluxipc_node_t *tree_mkdir(fluxipc_node_t *parent, const char *name)
 fluxipc_node_t *tree_leaf(fluxipc_node_t *parent, const char *name,
                           const fluxipc_method_t *method)
 {
-    if (!parent || !name || !name[0] || !method || !method->ipc)
+    if (!parent || !name || !name[0] || !method || !method->ipc) {
+        errno = EINVAL;
         return NULL;
-
-    if (tree_find_child(parent, name)) return NULL;   /* EEXIST */
+    }
+    if (tree_find_child(parent, name)) { errno = EEXIST; return NULL; }
 
     fluxipc_node_t *n = node_alloc(name);
-    if (!n) return NULL;
+    if (!n) { errno = ENOMEM; return NULL; }
 
-    n->method.ipc         = method->ipc;
-    n->method.data        = method->data;
-    n->method.summary     = dup_or_null(method->summary);
-    n->method.description = dup_or_null(method->description);
+    n->method.ipc     = method->ipc;
+    n->method.data    = method->data;
+    n->method.summary = dup_or_null(method->summary);
 
     n->parent = parent;
-    n->is_leaf = 1;
     set_full_path(n, parent, name);
 
     n->next_sibling = parent->children;
@@ -152,13 +149,10 @@ void tree_leaf_merge(fluxipc_node_t *node, const fluxipc_method_t *src)
 {
     if (!node || !src) return;
 
-    if (!node->method.ipc  && src->ipc)  node->method.ipc  = src->ipc;
     if (!node->method.data && src->data) node->method.data = src->data;
 
-    if (!node->method.summary     && src->summary)
-        node->method.summary     = dup_or_null(src->summary);
-    if (!node->method.description && src->description)
-        node->method.description = dup_or_null(src->description);
+    if (!node->method.summary && src->summary)
+        node->method.summary = dup_or_null(src->summary);
 }
 
 /* ─── Destroy ─────────────────────────────────────────────────────────────── */

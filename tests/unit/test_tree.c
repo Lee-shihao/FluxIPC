@@ -8,7 +8,6 @@
 #include "ut_common.h"
 
 #include <stdlib.h>
-#include <stdio.h>
 #include <string.h>
 #include <errno.h>
 
@@ -54,8 +53,8 @@ static void test_mkdir_basic(void **state)
     assert_string_equal(a->full_path, "/a");
     assert_string_equal(b->full_path, "/a/b");
     assert_string_equal(c->full_path, "/a/b/c");
-    assert_true(c->is_leaf);
-    assert_false(b->is_leaf);
+    assert_true(node_is_leaf(c));
+    assert_false(node_is_leaf(b));
     assert_ptr_equal(c->parent, b);
 
     tree_destroy(root);
@@ -132,26 +131,19 @@ static void test_leaf_copies_method(void **state)
 
     char summary[32];
     strcpy(summary, "original");
-    char desc[32];
-    strcpy(desc, "d");
-    fluxipc_method_t m = {
-        .ipc = dummy_ipc, .summary = summary, .description = desc,
-    };
+    fluxipc_method_t m = { .ipc = dummy_ipc, .summary = summary };
     fluxipc_node_t *n = tree_leaf(root, "n", &m);
     assert_non_null(n);
 
-    /* the node owns copies, mutating the source must not leak through */
+    /* the node owns a copy, mutating the source must not leak through */
     strcpy(summary, "CHANGED");
-    strcpy(desc, "CHANGED");
     assert_string_equal(n->method.summary, "original");
-    assert_string_equal(n->method.description, "d");
     assert_ptr_equal(n->method.ipc, dummy_ipc);
 
-    /* NULL optional strings stay NULL */
+    /* NULL optional summary stays NULL */
     fluxipc_method_t m2 = { .ipc = dummy_ipc };
     fluxipc_node_t *n2 = tree_leaf(root, "n2", &m2);
     assert_null(n2->method.summary);
-    assert_null(n2->method.description);
 
     tree_destroy(root);
 }
@@ -178,20 +170,18 @@ static void test_leaf_merge(void **state)
 
     /* Existing handler is kept; empty metadata is filled. */
     fluxipc_method_t second = {
-        .ipc = dummy_ipc2, .summary = "sum", .description = "desc",
+        .ipc = dummy_ipc2, .summary = "sum",
     };
     tree_leaf_merge(n, &second);
     assert_ptr_equal(n->method.ipc, dummy_ipc);
     assert_string_equal(n->method.summary, "sum");
-    assert_string_equal(n->method.description, "desc");
 
     /* A later merge never overwrites. */
     fluxipc_method_t third = {
-        .ipc = dummy_ipc2, .summary = "other", .description = "other",
+        .ipc = dummy_ipc2, .summary = "other",
     };
     tree_leaf_merge(n, &third);
     assert_string_equal(n->method.summary, "sum");
-    assert_string_equal(n->method.description, "desc");
 
     tree_destroy(root);
 }

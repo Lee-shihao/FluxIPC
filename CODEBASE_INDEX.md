@@ -20,7 +20,7 @@
   client helpers
 - `fluxipc_conn.c` — non-blocking connection pool and `select()` event loop
 - `fluxipc_interactive.c` — readline REPL (`ls`, `cd`, `help`, `watch`,
-  `reload`, tab completion)
+  `reload`, tab completion); linked into `fluxipc-cli` only
 
 **tests/**
 - `example_server.c` — IPC-only demo; runs `fluxipc_run()` in a host-created

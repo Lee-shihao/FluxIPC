@@ -61,31 +61,28 @@ typedef int (*fluxipc_handler_fn)(void   *data,
 /* ─── Method descriptor ───────────────────────────────────────────────────── */
 /**
  * Metadata + implementation of a leaf.  A leaf must have a non-NULL @c ipc
- * handler.  @c summary and @c description are copied by the library.
+ * handler.  @c summary is copied by the library and exposed through LIST.
  */
 typedef struct {
     const char         *summary;
-    const char         *description;
     fluxipc_handler_fn  ipc;
     void               *data;
 } fluxipc_method_t;
 
 /**
- * Convenience initialiser: FLUXIPC_METHOD(ipc_fn, summary, description).
+ * Convenience initialiser: FLUXIPC_METHOD(ipc_fn, summary).
  * Produces a compound literal, so it can be passed by address to
  * fluxipc_node_leaf() / fluxipc_register_method() or stored in a static table:
  *
  *     fluxipc_register_method("/greet/hello", &FLUXIPC_METHOD(
- *         hello_ipc, "Say hello", NULL));
+ *         hello_ipc, "Say hello"));
  */
-#define FLUXIPC_METHOD(ipc_fn, sum, desc) \
-    (fluxipc_method_t){ .ipc = (ipc_fn), \
-                        .summary = (sum), .description = (desc) }
+#define FLUXIPC_METHOD(ipc_fn, sum) \
+    (fluxipc_method_t){ .ipc = (ipc_fn), .summary = (sum) }
 
 /** Like FLUXIPC_METHOD() but also sets the per-leaf @c data pointer. */
-#define FLUXIPC_METHOD_D(ipc_fn, data_ptr, sum, desc) \
-    (fluxipc_method_t){ .ipc = (ipc_fn), .data = (data_ptr), \
-                        .summary = (sum), .description = (desc) }
+#define FLUXIPC_METHOD_D(ipc_fn, data_ptr, sum) \
+    (fluxipc_method_t){ .ipc = (ipc_fn), .data = (data_ptr), .summary = (sum) }
 
 /* ─── Namespace tree ──────────────────────────────────────────────────────── */
 
@@ -114,7 +111,7 @@ fluxipc_node_t *fluxipc_node_find(fluxipc_node_t *parent, const char *name);
  * missing intermediate container on the way:
  *
  *     fluxipc_register_method("/module/sensor/status", &FLUXIPC_METHOD(
- *         status_ipc, "Read the sensor", NULL));
+ *         status_ipc, "Read the sensor"));
  *
  * The method is copied exactly like fluxipc_node_leaf(), so passing a stack
  * temporary or a compound literal is safe.  The call is atomic: on failure no
@@ -172,7 +169,6 @@ void fluxipc_unregister(fluxipc_node_t *node);
 typedef struct fluxipc_entry {
     const char           *path;
     const char           *usage;
-    size_t                slot_data_sz;
     fluxipc_handler_fn    handler;
     void                 *data;
     struct fluxipc_entry *next;
@@ -189,7 +185,8 @@ void fluxipc_static_add(fluxipc_entry_t *entry);
  *
  * The entry is queued before @c main() and registered by
  * fluxipc_server_init(), so no @c -rdynamic / linker section is required.
- * @p usage becomes the leaf summary; @p slot_sz is accepted and ignored.
+ * @p usage becomes the leaf summary; @p slot_sz is accepted and ignored
+ * for source compatibility.
  *
  *     static int hello(void *d, int argc, char **argv,
  *                      void *out, size_t cap, size_t *len) { ... }
@@ -199,7 +196,6 @@ void fluxipc_static_add(fluxipc_entry_t *entry);
     static fluxipc_entry_t FLUXIPC_PP_CAT(_fluxipc_static_, __LINE__) = {    \
         .path         = (ipc_path),                                          \
         .usage        = (usage_str),                                         \
-        .slot_data_sz = (size_t)(slot_sz),                                   \
         .handler      = (handler_fn),                                        \
         .data         = (void *)(ctx),                                       \
     };                                                                       \
@@ -242,7 +238,7 @@ int  fluxipc_server_init(const char *prog_name);
  * Blocking convenience wrapper for fluxipc_poll_timeout(-1).
  * @return 1 if activity was handled, 0 on timeout/wakeup, negative errno.
  */
-int  fluxipc_poll(void *unused);
+int  fluxipc_poll(void);
 
 /**
  * Wait for and service socket activity.
@@ -288,22 +284,12 @@ int  fluxipc_is_running(void);
  */
 void fluxipc_destroy(void);
 
-/* ─── Help / interactive shell ────────────────────────────────────────────── */
+/* ─── Help ───────────────────────────────────────────────────────────────── */
 void fluxipc_usage(const char *prog);
-
-/**
- * Start the readline-based interactive shell for @p prog_name (used by
- * `fluxipc-cli <server> --interactive`).  It discovers servers by scanning
- * the per-user run directory and talks to them over their Unix sockets.
- * @return process-style exit status.
- */
-int  fluxipc_interactive_init(const char *prog_name);
 
 /* ─── Request observation hooks ───────────────────────────────────────────── */
 /** Read-only view of one request passed to the pre/post hooks. */
 typedef struct {
-    const char  *transport; /* always "ipc"                                */
-    const char  *method;    /* "CALL"                                      */
     const char  *path;      /* namespace path                              */
     int          matched;   /* 1 if a handler was found                    */
     int          status;    /* handler return code — valid in POST only    */

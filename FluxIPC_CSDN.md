@@ -30,7 +30,7 @@ static int add_ipc(void *data, int argc, char **argv,
 
 ```c
 fluxipc_register_method("/demo/add",
-    &FLUXIPC_METHOD(add_ipc, "两数相加", NULL));
+    &FLUXIPC_METHOD(add_ipc, "两数相加"));
 ```
 
 调用：
@@ -156,7 +156,7 @@ accept → READING（累积请求） → process → WRITING（刷出响应） �
 ```c
 fluxipc_node_t *root = fluxipc_tree_root();
 fluxipc_node_t *a    = fluxipc_node_mkdir(root, "a");
-fluxipc_node_leaf(a, "b", &FLUXIPC_METHOD(fn, "leaf b", NULL));
+fluxipc_node_leaf(a, "b", &FLUXIPC_METHOD(fn, "leaf b"));
 ```
 
 路径注册会自动创建中间容器：

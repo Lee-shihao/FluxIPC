@@ -53,12 +53,17 @@ struct fluxipc_node {
     struct fluxipc_node *children;
     struct fluxipc_node *parent;
     uint32_t             id;
-    int                  is_leaf;
 
     fluxipc_method_t     method;      /* copied; strings owned by the node */
 
     char                 full_path[FLUXIPC_PATH_MAX];
 };
+
+/** A node is a leaf iff it has an IPC handler (the only leaf kind). */
+static inline int node_is_leaf(const fluxipc_node_t *n)
+{
+    return n && n->method.ipc != NULL;
+}
 
 /* ─── Global server context ───────────────────────────────────────────────── */
 typedef struct fluxipc_ctx_s {
@@ -99,9 +104,8 @@ typedef struct fluxipc_conn {
     uint64_t             last_active_ms;
     fluxipc_conn_state_t state;
 
-    char   *rbuf; size_t rlen, rcap;   /* request accumulation  */
-    char   *wbuf; size_t wlen, woff, wcap; /* response to flush */
-    size_t  need;      /* complete request size once header parsed */
+    char   *rbuf; size_t rlen, rcap;   /* request accumulation */
+    char   *wbuf; size_t wlen, woff;   /* response to flush    */
 } fluxipc_conn_t;
 
 /**
@@ -110,18 +114,14 @@ typedef struct fluxipc_conn {
  * @return 1 activity handled, 0 timeout, negative errno on fatal error.
  */
 int  conn_poll(fluxipc_ctx_t *ctx, int timeout_ms);
-/** Queue a response for @p c (copies @p len bytes); returns 0/-1. */
-int  conn_respond(fluxipc_conn_t *c, const void *data, size_t len);
 /** Queue @p buf as the response and take ownership (no copy). */
-int  conn_respond_own(fluxipc_conn_t *c, char *buf, size_t len);
+int  conn_respond(fluxipc_conn_t *c, char *buf, size_t len);
 /** Close and free a connection slot. */
 void conn_close(fluxipc_conn_t *c);
 /** Close every pooled connection (shutdown). */
 void conn_pool_reset(void);
 /** Initialize the pool (call once before the event loop starts). */
 void conn_pool_init(void);
-/** Number of free connection slots (for tests / diagnostics). */
-int  conn_pool_free_count(void);
 
 /* Test-only hooks (compiled only with -DFLUXIPC_TESTING).  They expose the
  * otherwise-static connection pool and state-machine steps so the unit suite
@@ -131,7 +131,6 @@ fluxipc_conn_t *fluxipc_ut_conn(int idx);
 int             fluxipc_ut_conn_alloc(int fd);
 void            fluxipc_ut_conn_read(fluxipc_ctx_t *ctx, fluxipc_conn_t *c);
 void            fluxipc_ut_conn_write(fluxipc_conn_t *c);
-int             fluxipc_ut_pool_size(void);
 #endif
 
 /** Request processor for a Unix-socket connection.

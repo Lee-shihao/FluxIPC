@@ -52,25 +52,18 @@ MLIBS="-lrt -lpthread -lreadline \
 export ASAN_OPTIONS="detect_leaks=0:abort_on_error=1:exitcode=99"
 
 LIB_SRCS=(src/fluxipc_core.c src/fluxipc_tree.c src/fluxipc_sock.c \
-          src/fluxipc_conn.c src/fluxipc_interactive.c)
+          src/fluxipc_conn.c)
 UNIT_SRCS=(tests/unit/ut_main.c tests/unit/ut_common.c \
            tests/unit/test_protocol.c tests/unit/test_tree.c tests/unit/test_core.c \
            tests/unit/test_sock.c tests/unit/test_conn.c \
            tests/unit/test_interactive.c tests/unit/test_cli.c)
-
-# The interactive module is pulled in by test_interactive.c.
-ULIB=()
-for s in "${LIB_SRCS[@]}"; do
-    [ "$s" = "src/fluxipc_interactive.c" ] && continue
-    ULIB+=("$s")
-done
 
 echo "== building Mull-instrumented unit suite (per-TU) =="
 rm -rf "$BUILD" "$OUT"
 mkdir -p "$BUILD/obj" "$OUT"
 
 OBJS=()
-for src in "${UNIT_SRCS[@]}" "${ULIB[@]}"; do
+for src in "${UNIT_SRCS[@]}" "${LIB_SRCS[@]}"; do
     obj="$BUILD/obj/$(basename "$src" .c).o"
     echo "   $src"
     "$CLANG" $MCFLAGS -c "$src" -o "$obj"

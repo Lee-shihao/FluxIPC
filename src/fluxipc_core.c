@@ -11,7 +11,6 @@
  */
 
 #include "fluxipc_internal.h"
-#include "fluxipc.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -25,6 +24,12 @@
 fluxipc_ctx_t *g_ctx = NULL;
 
 static void fluxipc_static_apply(void);   /* FLUXIPC_STATIC registry, defined below */
+
+static int valid_prog_name(const char *name)
+{
+    return name && name[0] &&
+           strlen(name) < FLUXIPC_NAME_MAX && !strchr(name, '/');
+}
 
 /* ─── Context allocation ──────────────────────────────────────────────────── */
 
@@ -62,7 +67,13 @@ static void ctx_free(fluxipc_ctx_t *ctx)
 {
     if (!ctx) return;
     if (ctx->sock_path[0]) unlink(ctx->sock_path);
-    free(ctx->root);
+    rmdir(ctx->run_dir);   /* only succeeds when the runtime dir is empty */
+
+    pthread_mutex_lock(&ctx->tree_lock);
+    tree_destroy(ctx->root);
+    ctx->root = NULL;
+    pthread_mutex_unlock(&ctx->tree_lock);
+
     if (ctx->wake_fd >= 0) close(ctx->wake_fd);
     free(ctx->ipc_out);
     pthread_mutex_destroy(&ctx->hook_lock);
@@ -75,9 +86,7 @@ static void ctx_free(fluxipc_ctx_t *ctx)
 int fluxipc_server_init(const char *prog_name)
 {
     if (g_ctx) return -EALREADY;
-    if (!prog_name || !prog_name[0] ||
-        strlen(prog_name) >= FLUXIPC_NAME_MAX || strchr(prog_name, '/'))
-        return -EINVAL;
+    if (!valid_prog_name(prog_name)) return -EINVAL;
 
     fluxipc_ctx_t *ctx = ctx_alloc(prog_name);
     if (!ctx) return -ENOMEM;
@@ -124,7 +133,7 @@ static int valid_segment(const char *name)
 
 fluxipc_node_t *fluxipc_node_mkdir(fluxipc_node_t *parent, const char *name)
 {
-    if (!g_ctx || !parent || !valid_segment(name) || parent->is_leaf) {
+    if (!g_ctx || !parent || !valid_segment(name) || node_is_leaf(parent)) {
         errno = EINVAL;
         return NULL;
     }
@@ -143,14 +152,12 @@ fluxipc_node_t *fluxipc_node_leaf(fluxipc_node_t *parent,
         errno = EINVAL;
         return NULL;
     }
-    if (parent->is_leaf) { errno = EINVAL; return NULL; }
+    if (node_is_leaf(parent)) { errno = EINVAL; return NULL; }
 
     pthread_mutex_lock(&g_ctx->tree_lock);
     fluxipc_node_t *n = tree_leaf(parent, name, method);
     if (n) n->id = g_ctx->next_id++;
     pthread_mutex_unlock(&g_ctx->tree_lock);
-
-    if (!n) { errno = EEXIST; return NULL; }
     return n;
 }
 
@@ -186,12 +193,10 @@ fluxipc_node_t *fluxipc_register_method(const char *path,
         memcpy(seg, p, len);
         seg[len] = '\0';
 
-        if (!valid_segment(seg)) goto fail;
-
         if (!slash) {                       /* final segment → leaf */
             fluxipc_node_t *leaf = tree_find_child(cur, seg);
             if (leaf) {
-                if (!leaf->is_leaf) { err = EEXIST; goto fail; }
+                if (!node_is_leaf(leaf)) { err = EEXIST; goto fail; }
                 tree_leaf_merge(leaf, method);   /* fill still-empty metadata */
             } else {
                 leaf = tree_leaf(cur, seg, method);
@@ -203,7 +208,7 @@ fluxipc_node_t *fluxipc_register_method(const char *path,
         }
 
         fluxipc_node_t *next = tree_find_child(cur, seg);
-        if (next && next->is_leaf) { err = EEXIST; goto fail; }
+        if (next && node_is_leaf(next)) { err = EEXIST; goto fail; }
         if (!next) {
             next = tree_mkdir(cur, seg);
             if (!next) { err = ENOMEM; goto fail; }
@@ -243,7 +248,6 @@ fluxipc_node_t *(fluxipc_register)(const char *path, const char *usage,
                                    fluxipc_handler_fn handler, void *data)
 {
     (void)slot_sz;
-    if (!handler) { errno = EINVAL; return NULL; }
     fluxipc_method_t m = {
         .ipc     = handler,
         .data    = data,
@@ -280,7 +284,7 @@ static void fluxipc_static_apply(void)
 {
     pthread_mutex_lock(&g_static_lock);
     for (fluxipc_entry_t *e = g_static_head; e; e = e->next)
-        fluxipc_register(e->path, e->usage, e->slot_data_sz, e->handler, e->data);
+        fluxipc_register(e->path, e->usage, 0, e->handler, e->data);
     pthread_mutex_unlock(&g_static_lock);
 }
 
@@ -326,7 +330,7 @@ void fluxipc_node_remove(fluxipc_node_t *node)
     free_subtree(node);
 
     /* prune now-empty ancestors */
-    while (p && p->parent && !p->is_leaf && !p->children) {
+    while (p && p->parent && !node_is_leaf(p) && !p->children) {
         fluxipc_node_t *gp = p->parent;
         unlink_from_parent(p);
         tree_node_free(p);
@@ -341,7 +345,7 @@ static int walk_leaves(fluxipc_node_t *node, fluxipc_leaf_cb cb, void *user,
                        int *stop)
 {
     int count = 0;
-    if (node->is_leaf) {
+    if (node_is_leaf(node)) {
         count++;
         if (cb(node, user)) *stop = 1;
         return count;
@@ -461,12 +465,12 @@ const char *fluxipc_node_name(const fluxipc_node_t *n)
 
 const fluxipc_method_t *fluxipc_node_method(const fluxipc_node_t *n)
 {
-    return (n && n->is_leaf) ? &n->method : NULL;
+    return node_is_leaf(n) ? &n->method : NULL;
 }
 
 int fluxipc_node_is_leaf(const fluxipc_node_t *n)
 {
-    return n && n->is_leaf;
+    return node_is_leaf(n);
 }
 
 /* ─── Dispatch ────────────────────────────────────────────────────────────── */
@@ -483,7 +487,7 @@ int fluxipc_dispatch_ipc(fluxipc_ctx_t *ctx, const char *path,
 
     pthread_mutex_lock(&ctx->tree_lock);
     fluxipc_node_t *node = tree_find_path(ctx->root, path);
-    if (node && node->is_leaf) {
+    if (node_is_leaf(node)) {
         handler = node->method.ipc;
         data    = node->method.data;
     }
@@ -496,10 +500,8 @@ int fluxipc_dispatch_ipc(fluxipc_ctx_t *ctx, const char *path,
     pthread_mutex_unlock(&ctx->hook_lock);
 
     fluxipc_event_t ev = {
-        .transport = "ipc",
-        .method    = "CALL",
-        .path      = path,
-        .matched   = handler ? 1 : 0,
+        .path    = path,
+        .matched = handler ? 1 : 0,
     };
     if (pre) pre(&ev, user);
 
@@ -545,9 +547,8 @@ int fluxipc_poll_timeout(int timeout_ms)
     return rc;
 }
 
-int fluxipc_poll(void *unused)
+int fluxipc_poll(void)
 {
-    (void)unused;
     return fluxipc_poll_timeout(-1);
 }
 
@@ -561,7 +562,6 @@ int fluxipc_run(void)
 
         int rc = fluxipc_poll_timeout(-1);
         if (rc < 0) {
-            if (rc == -EINTR) continue;
             if (!atomic_load_explicit(&g_ctx->running, memory_order_acquire))
                 return 0;
             return rc;
@@ -599,13 +599,6 @@ void fluxipc_destroy(void)
     atomic_store_explicit(&ctx->running, 0, memory_order_release);
     conn_pool_reset();
     sock_server_close(ctx);
-    rmdir(ctx->run_dir);   /* remove the now-empty per-app runtime dir */
-
-    pthread_mutex_lock(&ctx->tree_lock);
-    tree_destroy(ctx->root);
-    ctx->root = NULL;
-    pthread_mutex_unlock(&ctx->tree_lock);
-
     ctx_free(ctx);
 }
 
@@ -614,9 +607,7 @@ void fluxipc_destroy(void)
 int fluxipc_list_endpoints(const char *prog_name,
                            fluxipc_list_cb cb, void *userdata)
 {
-    if (!prog_name || !prog_name[0] || !cb ||
-        strlen(prog_name) >= FLUXIPC_NAME_MAX || strchr(prog_name, '/'))
-        return -EINVAL;
+    if (!cb || !valid_prog_name(prog_name)) return -EINVAL;
 
     char sock_path[FLUXIPC_PATH_MAX];
     snprintf(sock_path, sizeof(sock_path),
@@ -637,14 +628,14 @@ int fluxipc_list_endpoints(const char *prog_name,
         char *eol = nl ? nl : end;
         *eol = '\0';
 
-        char *tab1 = strchr(p, '\t');
-        if (tab1 && tab1 < eol) {
+        char *tab1 = memchr(p, '\t', (size_t)(eol - p));
+        if (tab1) {
             *tab1 = '\0';
-            char *tab2 = strchr(tab1 + 1, '\t');
-            if (tab2 && tab2 < eol) {
+            char *tab2 = memchr(tab1 + 1, '\t',
+                                (size_t)(eol - (tab1 + 1)));
+            if (tab2) {
                 *tab2 = '\0';
                 char *num_end = NULL;
-                errno = 0;
                 unsigned long id = strtoul(p, &num_end, 10);
                 if (num_end != p && num_end && *num_end == '\0')
                     cb(tab1 + 1, (uint32_t)id, tab2 + 1, userdata);
@@ -665,7 +656,7 @@ static int usage_leaf_cb(const fluxipc_node_t *leaf, void *user)
     (void)user;
     const fluxipc_method_t *m = fluxipc_node_method(leaf);
     printf("  %-40s  %s\n", leaf->full_path,
-           (m && m->summary && m->summary[0]) ? m->summary : "(no description)");
+           (m && m->summary && m->summary[0]) ? m->summary : "(no summary)");
     return 0;
 }
 

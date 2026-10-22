@@ -149,17 +149,17 @@ static void test_poll_and_stop(void **state)
 {
     (void)state;
     ut_server_down();
-    assert_int_equal(fluxipc_poll(NULL), -EINVAL);   /* before init */
+    assert_int_equal(fluxipc_poll(), -EINVAL);   /* before init */
 
     ut_server_up();
 
     /* conn_poll() blocks on select(); fluxipc_stop() wakes it via eventfd. */
     pthread_t th;
     assert_int_equal(pthread_create(&th, NULL, stop_after_delay, NULL), 0);
-    assert_true(fluxipc_poll(NULL) >= 0);
+    assert_true(fluxipc_poll() >= 0);
     pthread_join(th, NULL);
     assert_int_equal(atomic_load(&g_ctx->running), 0);
-    assert_int_equal(fluxipc_poll(NULL), -EINVAL);   /* after stop */
+    assert_int_equal(fluxipc_poll(), -EINVAL);   /* after stop */
     assert_int_equal(fluxipc_is_running(), 0);
     ut_server_down();
 
@@ -206,7 +206,7 @@ static void test_run_in_host_thread(void **state)
 static void *poll_thread(void *arg)
 {
     int *rc = arg;
-    *rc = fluxipc_poll(NULL);
+    *rc = fluxipc_poll();
     return NULL;
 }
 
@@ -445,18 +445,15 @@ static void test_register_merge(void **state)
     assert_ptr_equal(n->method.ipc, ipc_handler);
     assert_null(n->method.data);
     assert_string_equal(n->method.summary, "combined");
-    assert_null(n->method.description);
 
     /* 2) merge fills empty fields only */
     fluxipc_method_t second = {
-        .ipc = ipc_handler2, .data = &ctx,
-        .summary = "ignored", .description = "desc",
+        .ipc = ipc_handler2, .data = &ctx, .summary = "ignored",
     };
     assert_ptr_equal(fluxipc_register_method("/m/x", &second), n);
     assert_ptr_equal(n->method.ipc, ipc_handler);      /* kept */
     assert_ptr_equal(n->method.data, &ctx);
     assert_string_equal(n->method.summary, "combined"); /* kept */
-    assert_string_equal(n->method.description, "desc");
 }
 
 /* classic main-branch fluxipc_register(path, usage, slot_sz, handler, data) */
@@ -479,13 +476,12 @@ static void test_register_legacy(void **state)
     assert_int_equal(errno, EINVAL);
     assert_non_null(fluxipc_register("/legacy/c", NULL, 0, ipc_handler, NULL));
 
-    /* a later registration completes the description, same node */
+    /* a later registration is merged without overwriting anything */
     fluxipc_node_t *h = fluxipc_register_method("/legacy/a",
-        &FLUXIPC_METHOD(ipc_handler2, "ignored", "legacy description"));
+        &FLUXIPC_METHOD(ipc_handler2, "ignored"));
     assert_ptr_equal(h, n);
     assert_ptr_equal(n->method.ipc, ipc_handler);
     assert_string_equal(n->method.summary, "[args]");
-    assert_string_equal(n->method.description, "legacy description");
 
     /* fluxipc_unregister() is the main alias for fluxipc_node_remove() */
     fluxipc_node_t *g = fluxipc_register("/legacyrm/a", "u", 0, ipc_handler, NULL);
@@ -760,8 +756,6 @@ static void test_hooks(void **state)
     assert_int_equal(rc, 0);
     assert_int_equal(g_pre_n, 1);
     assert_int_equal(g_post_n, 1);
-    assert_string_equal(g_pre.transport, "ipc");
-    assert_string_equal(g_pre.method, "CALL");
     assert_string_equal(g_pre.path, "/hooked");
     assert_int_equal(g_pre.matched, 1);
     assert_int_equal(g_post.status, 0);
@@ -869,7 +863,7 @@ static void test_concurrent_registration(void **state)
         char path[64];
         snprintf(path, sizeof(path), "/bulk/e%02d", i);
         assert_non_null(fluxipc_register_method(
-            path, &FLUXIPC_METHOD(ipc_handler, "bulk", NULL)));
+            path, &FLUXIPC_METHOD(ipc_handler, "bulk")));
     }
 
     g_list_count = 0;

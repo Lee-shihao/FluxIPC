@@ -73,8 +73,8 @@ tests/
 
 - `sock_conn_process` 已导出，配合栈上 fake 连接即可测试协议。
 - `fluxipc_interactive.c`、`cli/fluxipc_cli.c` 由测试 TU 直接 `#include`，
-  可直接调用 static 函数；UT 链接列表**排除** `src/fluxipc_interactive.c`
-  以避免重复符号。
+  可直接调用 static 函数；`fluxipc_interactive.c` 只属于 CLI，不在 `LIB_SRCS`
+  中，因此不会与 UT 链接列表重复。
 - `-DFLUXIPC_TESTING` 下 `conn.c` 额外导出
   `fluxipc_ut_conn()` / `fluxipc_ut_conn_alloc()` /
   `fluxipc_ut_conn_read()` / `fluxipc_ut_conn_write()`，用于精确驱动连接状态机。

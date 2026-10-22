@@ -26,7 +26,7 @@ FluxIPC 是一个面向 Linux 的轻量级 **命名空间树 IPC 库**。应用�
 
 - GCC 或 Clang
 - GNU make
-- `libreadline`（交互式 shell）
+- `libreadline`（仅交互式 CLI 使用；核心库不链接它）
 - `libpthread`、`librt`（通常由 libc 提供）
 
 ```bash
@@ -101,7 +101,7 @@ int main(void)
     if (rc < 0) return 1;
 
     fluxipc_register_method("/demo/add",
-        &FLUXIPC_METHOD(add_ipc, "两数相加", NULL));
+        &FLUXIPC_METHOD(add_ipc, "两数相加"));
 
     /* 方式 A：在应用自己创建的线程中运行事件循环。 */
     pthread_t th;
@@ -129,19 +129,19 @@ int main(void)
 ```c
 /* 路径注册；中间容器自动创建。 */
 fluxipc_register_method("/module/sensor/status",
-    &FLUXIPC_METHOD(status_ipc, "读取传感器", NULL));
+    &FLUXIPC_METHOD(status_ipc, "读取传感器"));
 
 /* 带每叶子数据指针。 */
 fluxipc_register_method("/devices/led/value",
-    &FLUXIPC_METHOD_D(value_ipc, &led_ctx, "读写 LED 值", NULL));
+    &FLUXIPC_METHOD_D(value_ipc, &led_ctx, "读写 LED 值"));
 
 /* 经典 main 分支签名（slot_sz 保留但忽略）。 */
 fluxipc_register("/legacy/ping", "Ping", 0, ping_ipc, NULL);
 
 /* 静态表。 */
 static const fluxipc_endpoint_t table[] = {
-    { "/a", FLUXIPC_METHOD(a_ipc, "A", NULL) },
-    { "/b", FLUXIPC_METHOD(b_ipc, "B", NULL) },
+    { "/a", FLUXIPC_METHOD(a_ipc, "A") },
+    { "/b", FLUXIPC_METHOD(b_ipc, "B") },
 };
 fluxipc_register_all(table, sizeof(table) / sizeof(table[0]));
 
@@ -149,15 +149,14 @@ fluxipc_register_all(table, sizeof(table) / sizeof(table[0]));
 FLUXIPC_STATIC("/system/compiled", "编译期端点", 0, compiled_ipc, NULL);
 ```
 
-重复注册同一路径会合并元数据：仍为空的 `summary`、`description`、`data`
-会被填充；已有处理器不会被覆盖。
+重复注册同一路径会合并元数据：仍为空的 `summary`、`data` 会被填充；已有处理器不会被覆盖。
 
 ### 运行时增删
 
 ```c
 fluxipc_node_t *root = fluxipc_tree_root();
 fluxipc_node_t *dir  = fluxipc_node_mkdir(root, "dynamic");
-fluxipc_node_leaf(dir, "leaf", &FLUXIPC_METHOD(fn, "动态叶子", NULL));
+fluxipc_node_leaf(dir, "leaf", &FLUXIPC_METHOD(fn, "动态叶子"));
 
 fluxipc_node_remove(dir);   // 删除子树并裁剪空祖先
 ```
@@ -275,7 +274,7 @@ src/
   fluxipc_tree.c         命名空间树
   fluxipc_sock.c         Unix socket 传输 + 客户端
   fluxipc_conn.c         非阻塞连接池 / select 循环
-  fluxipc_interactive.c  交互式 REPL
+  fluxipc_interactive.c  交互式 REPL（仅链接进 fluxipc-cli）
 cli/
   fluxipc_cli.c          CLI 入口
 tests/

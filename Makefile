@@ -2,10 +2,11 @@ CC       ?= gcc
 CFLAGS   += -Wall -Wextra -O2 -g -std=gnu11 \
             -Iinclude \
             -D_GNU_SOURCE \
-            -Wno-unused-parameter \
-            $(shell pkg-config --cflags readline 2>/dev/null)
+            -Wno-unused-parameter
+READLINE_CFLAGS := $(shell pkg-config --cflags readline 2>/dev/null)
 LDFLAGS  +=
-LDLIBS   += -lrt -lpthread -lreadline
+LDLIBS   += -lrt -lpthread
+CLI_LDLIBS := $(LDLIBS) -lreadline
 
 VERSION      ?= 1.0.0
 PREFIX       ?= /usr
@@ -19,10 +20,9 @@ PKGCONFIGDIR ?= $(LIBDIR)/pkgconfig
 LIB_SRCS := src/fluxipc_core.c \
             src/fluxipc_tree.c \
             src/fluxipc_sock.c \
-            src/fluxipc_conn.c \
-            src/fluxipc_interactive.c
+            src/fluxipc_conn.c
 
-CLI_SRCS := cli/fluxipc_cli.c $(LIB_SRCS)
+CLI_SRCS := cli/fluxipc_cli.c src/fluxipc_interactive.c $(LIB_SRCS)
 
 LIB_PIC_OBJS := $(LIB_SRCS:.c=.pic.o)
 LIB_OBJS     := $(LIB_SRCS:.c=.o)
@@ -73,12 +73,12 @@ COV_LINE_MIN   ?= 90
 COV_BRANCH_MIN ?= 75
 MUT_SCORE_MIN  ?= 70
 
-TEST_CFLAGS := $(CFLAGS) $(CMOCKA_CFLAGS) -DFLUXIPC_TESTING
+TEST_CFLAGS := $(CFLAGS) $(READLINE_CFLAGS) $(CMOCKA_CFLAGS) -DFLUXIPC_TESTING
 
 # Unit tests are built straight from sources (never via the static archive) so
-# that coverage/mutation instrumentation sees every translation unit.  The
-# interactive module is pulled in by test_interactive.c (white-box include),
-# so it is excluded from the link list to avoid duplicate symbols.
+# that coverage/mutation instrumentation sees every translation unit.
+# fluxipc_interactive.c is CLI-only (not in LIB_SRCS) and is pulled in by
+# test_interactive.c as a white-box include.
 UT_BIN       := fluxipc-ut
 IT_BIN       := fluxipc-it
 BENCH_BIN    := fluxipc-bench
@@ -87,7 +87,7 @@ UT_SRCS      := tests/unit/ut_main.c tests/unit/ut_common.c \
                 tests/unit/test_tree.c tests/unit/test_core.c \
                 tests/unit/test_sock.c tests/unit/test_conn.c \
                 tests/unit/test_interactive.c tests/unit/test_cli.c
-UT_LIB_SRCS  := $(filter-out src/fluxipc_interactive.c,$(LIB_SRCS))
+UT_LIB_SRCS  := $(LIB_SRCS)
 IT_SRCS      := tests/integration/main.c
 BENCH_SRCS   := tests/bench/bench.c
 
@@ -104,7 +104,7 @@ check-tools:
 $(UT_BIN): include/fluxipc.h include/fluxipc_internal.h
 $(UT_BIN): check-tools $(UT_SRCS) $(UT_LIB_SRCS)
 	$(CC) $(TEST_CFLAGS) -o $@ $(UT_SRCS) $(UT_LIB_SRCS) $(TEST_LDFLAGS) \
-	    $(LDLIBS) $(CMOCKA_LDFLAGS)
+	    $(LDLIBS) -lreadline $(CMOCKA_LDFLAGS)
 
 $(IT_BIN): include/fluxipc.h include/fluxipc_internal.h
 $(IT_BIN): $(IT_SRCS) $(TARGET_STATIC)
@@ -174,7 +174,7 @@ ASAN_BIN := $(UT_BIN)-asan
 ut-asan: check-tools $(UT_SRCS) $(UT_LIB_SRCS)
 	$(CC) $(TEST_CFLAGS) -fsanitize=address,undefined -fno-omit-frame-pointer \
 	    -o $(ASAN_BIN) $(UT_SRCS) $(UT_LIB_SRCS) $(TEST_LDFLAGS) \
-	    $(LDLIBS) $(CMOCKA_LDFLAGS) -fsanitize=address,undefined
+	    $(LDLIBS) -lreadline $(CMOCKA_LDFLAGS) -fsanitize=address,undefined
 	ASAN_OPTIONS=detect_leaks=1 ./$(ASAN_BIN)
 
 debug:
@@ -201,6 +201,7 @@ $(TARGET_LIB): $(LIB_PIC_OBJS)
 # ABIs and cause crashes.
 $(LIB_OBJS) $(LIB_PIC_OBJS): include/fluxipc.h include/fluxipc_internal.h
 cli/fluxipc_cli.o: include/fluxipc.h
+src/fluxipc_interactive.o: include/fluxipc.h include/fluxipc_internal.h
 
 src/%.pic.o: src/%.c
 	$(CC) $(CFLAGS) -fPIC -c -o $@ $<
@@ -218,8 +219,11 @@ $(TARGET_STATIC): $(LIB_OBJS)
 cli/%.o: cli/%.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+# The interactive REPL is a CLI feature, not part of the core library.
+src/fluxipc_interactive.o: CFLAGS += $(READLINE_CFLAGS)
+
 $(TARGET_CLI): $(CLI_OBJS)
-	$(CC) -o $@ $^ $(LDFLAGS) $(LDLIBS)
+	$(CC) -o $@ $^ $(LDFLAGS) $(CLI_LDLIBS)
 
 # ── Examples ─────────────────────────────────────────
 
@@ -241,7 +245,7 @@ $(PKG_CONFIG):
 	    "Name: FluxIPC" \
 	    "Description: Namespace-tree IPC library for Linux" \
 	    "Version: $(VERSION)" \
-	    "Libs: -L\$${libdir} -lfluxipc -lpthread -lrt -lreadline" \
+	    "Libs: -L\$${libdir} -lfluxipc -lpthread -lrt" \
 	    "Cflags: -I\$${includedir}" \
 	    > $@
 

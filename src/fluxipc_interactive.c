@@ -28,7 +28,6 @@
  */
 
 #include "fluxipc_internal.h"
-#include "fluxipc.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -774,7 +773,7 @@ static void cmd_help(const char *arg)
     path_node_t *node = node_lookup_rel(arg);
     if (node && node->is_leaf)
         printf("\n  %s\n\n",
-               node->usage[0] ? node->usage : "(no description)");
+               node->usage[0] ? node->usage : "(no summary)");
     else
         printf("  No entry for '%s'\n\n", arg);
 }
@@ -1325,9 +1324,8 @@ static void dispatch(const char *line)
 
 /* ─── fluxipc_interactive_init ────────────────────────────────────────────── */
 
-int fluxipc_interactive_init(const char *prog_name)
+int fluxipc_interactive_init(void)
 {
-    (void)prog_name;
     tree_init();
     update_prompt();
     load_all_endpoints();

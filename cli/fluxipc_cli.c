@@ -23,10 +23,11 @@
 #include "fluxipc.h"
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <errno.h>
+
+/* Implemented alongside the CLI target (not part of the core library). */
+int fluxipc_interactive_init(void);
 
 static void print_help(const char *argv0)
 {
@@ -136,7 +137,7 @@ int main(int argc, char **argv)
                     "fluxipc: --interactive takes no further arguments\n");
             return 1;
         }
-        return fluxipc_interactive_init(prog);
+        return fluxipc_interactive_init();
     }
 
     if (strcmp(cmd, "-c") == 0 || strcmp(cmd, "--call") == 0) {

@@ -29,7 +29,7 @@ COV_LIBS="--coverage -lrt -lpthread -lreadline \
  -Wl,-rpath,$TOOLS/usr/lib/x86_64-linux-gnu"
 
 LIB_SRCS=(src/fluxipc_core.c src/fluxipc_tree.c src/fluxipc_sock.c \
-          src/fluxipc_conn.c src/fluxipc_interactive.c)
+          src/fluxipc_conn.c)
 
 UNIT_SRCS=(tests/unit/ut_main.c tests/unit/ut_common.c \
            tests/unit/test_protocol.c tests/unit/test_tree.c tests/unit/test_core.c \
@@ -40,14 +40,7 @@ echo "== building instrumented unit suite =="
 rm -rf "$BUILD" "$OUT"
 mkdir -p "$BUILD" "$OUT"
 
-# The interactive module is pulled in by test_interactive.c; exclude it here.
-ULIB=()
-for s in "${LIB_SRCS[@]}"; do
-    [ "$s" = "src/fluxipc_interactive.c" ] && continue
-    ULIB+=("$s")
-done
-
-gcc $COV_CFLAGS -o "$BUILD/fluxipc-ut" "${UNIT_SRCS[@]}" "${ULIB[@]}" $COV_LIBS
+gcc $COV_CFLAGS -o "$BUILD/fluxipc-ut" "${UNIT_SRCS[@]}" "${LIB_SRCS[@]}" $COV_LIBS
 echo "== building instrumented integration pair =="
 gcc $COV_CFLAGS -o "$BUILD/fluxipc-it" tests/integration/main.c "${LIB_SRCS[@]}" $COV_LIBS
 gcc $COV_CFLAGS -o "$BUILD/example_server" tests/example_server.c "${LIB_SRCS[@]}" $COV_LIBS

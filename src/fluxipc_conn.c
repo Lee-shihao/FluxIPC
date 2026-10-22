@@ -17,7 +17,6 @@
 #include "fluxipc_internal.h"
 
 #include <sys/socket.h>
-#include <sys/un.h>
 #include <sys/select.h>
 #include <unistd.h>
 #include <string.h>
@@ -48,8 +47,7 @@ void conn_close(fluxipc_conn_t *c)
     c->fd = -1;
     c->rbuf = c->wbuf = NULL;
     c->rlen = c->rcap = 0;
-    c->wlen = c->woff = c->wcap = 0;
-    c->need = 0;
+    c->wlen = c->woff = 0;
     c->last_active_ms = 0;
 }
 
@@ -65,14 +63,6 @@ void conn_pool_reset(void)
 {
     for (int i = 0; i < FLUXIPC_MAX_CONNS; i++)
         conn_close(&g_conns[i]);
-}
-
-int conn_pool_free_count(void)
-{
-    int n = 0;
-    for (int i = 0; i < FLUXIPC_MAX_CONNS; i++)
-        if (g_conns[i].fd < 0) n++;
-    return n;
 }
 
 static fluxipc_conn_t *conn_alloc(int fd)
@@ -92,30 +82,11 @@ static fluxipc_conn_t *conn_alloc(int fd)
     return NULL;   /* pool exhausted */
 }
 
-int conn_respond(fluxipc_conn_t *c, const void *data, size_t len)
-{
-    if (!c) return -1;
-    if (len > 0) {
-        if (len > c->wcap) {
-            char *nb = realloc(c->wbuf, len);
-            if (!nb) return -1;
-            c->wbuf = nb;
-            c->wcap = len;
-        }
-        memcpy(c->wbuf, data, len);
-    }
-    c->wlen = len;
-    c->woff = 0;
-    c->state = FLUXIPC_CONN_WRITING;
-    return 0;
-}
-
-int conn_respond_own(fluxipc_conn_t *c, char *buf, size_t len)
+int conn_respond(fluxipc_conn_t *c, char *buf, size_t len)
 {
     if (!c) { free(buf); return -1; }
     free(c->wbuf);
     c->wbuf = buf;
-    c->wcap = len;
     c->wlen = len;
     c->woff = 0;
     c->state = FLUXIPC_CONN_WRITING;
@@ -127,9 +98,7 @@ int conn_respond_own(fluxipc_conn_t *c, char *buf, size_t len)
 static void accept_unix(fluxipc_ctx_t *ctx)
 {
     for (;;) {
-        struct sockaddr_un peer;
-        socklen_t plen = sizeof(peer);
-        int fd = accept4(ctx->server_fd, (struct sockaddr *)&peer, &plen,
+        int fd = accept4(ctx->server_fd, NULL, NULL,
                          SOCK_NONBLOCK | SOCK_CLOEXEC);
         if (fd < 0) return;
         if (!conn_alloc(fd)) close(fd);
@@ -159,7 +128,6 @@ static void conn_write(fluxipc_conn_t *c)
 static void conn_read(fluxipc_ctx_t *ctx, fluxipc_conn_t *c)
 {
     int peer_closed = 0;
-    int got_data = 0;
 
     for (;;) {
         if (c->rlen == c->rcap) {
@@ -172,15 +140,17 @@ static void conn_read(fluxipc_ctx_t *ctx, fluxipc_conn_t *c)
             c->rcap = ncap;
         }
         ssize_t n = recv(c->fd, c->rbuf + c->rlen, c->rcap - c->rlen, 0);
-        if (n > 0) { c->rlen += (size_t)n; got_data = 1; continue; }
+        if (n > 0) {
+            c->rlen += (size_t)n;
+            c->last_active_ms = now_ms();
+            continue;
+        }
         if (n == 0) { peer_closed = 1; break; }
         if (errno == EINTR) continue;
         if (errno == EAGAIN || errno == EWOULDBLOCK) break;
         conn_close(c);
         return;
     }
-
-    if (got_data) c->last_active_ms = now_ms();
 
     int rc = sock_conn_process(ctx, c);
     if (rc < 0 || (rc == 0 && peer_closed)) { conn_close(c); return; }
@@ -326,10 +296,5 @@ void fluxipc_ut_conn_read(fluxipc_ctx_t *ctx, fluxipc_conn_t *c)
 void fluxipc_ut_conn_write(fluxipc_conn_t *c)
 {
     conn_write(c);
-}
-
-int fluxipc_ut_pool_size(void)
-{
-    return FLUXIPC_MAX_CONNS;
 }
 #endif

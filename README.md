@@ -31,7 +31,7 @@ existing scheduler, or drive it manually.
 
 - GCC or Clang
 - GNU make
-- `libreadline` (interactive shell)
+- `libreadline` (interactive CLI shell only; the core library does not link it)
 - `libpthread`, `librt` (usually part of libc)
 
 ```bash
@@ -106,7 +106,7 @@ int main(void)
     if (rc < 0) return 1;
 
     fluxipc_register_method("/demo/add",
-        &FLUXIPC_METHOD(add_ipc, "Add two integers", NULL));
+        &FLUXIPC_METHOD(add_ipc, "Add two integers"));
 
     /* Option A: run the loop in a thread you own. */
     pthread_t th;
@@ -135,19 +135,19 @@ Return `0` on success or a negative errno. A missing endpoint yields
 ```c
 /* Path-based; intermediate containers are created automatically. */
 fluxipc_register_method("/module/sensor/status",
-    &FLUXIPC_METHOD(status_ipc, "Read the sensor", NULL));
+    &FLUXIPC_METHOD(status_ipc, "Read the sensor"));
 
 /* Per-leaf data pointer. */
 fluxipc_register_method("/devices/led/value",
-    &FLUXIPC_METHOD_D(value_ipc, &led_ctx, "Get/set LED value", NULL));
+    &FLUXIPC_METHOD_D(value_ipc, &led_ctx, "Get/set LED value"));
 
 /* Classic main-branch signature (slot_sz is accepted and ignored). */
 fluxipc_register("/legacy/ping", "Ping", 0, ping_ipc, NULL);
 
 /* Static table. */
 static const fluxipc_endpoint_t table[] = {
-    { "/a", FLUXIPC_METHOD(a_ipc, "A", NULL) },
-    { "/b", FLUXIPC_METHOD(b_ipc, "B", NULL) },
+    { "/a", FLUXIPC_METHOD(a_ipc, "A") },
+    { "/b", FLUXIPC_METHOD(b_ipc, "B") },
 };
 fluxipc_register_all(table, sizeof(table) / sizeof(table[0]));
 
@@ -155,15 +155,14 @@ fluxipc_register_all(table, sizeof(table) / sizeof(table[0]));
 FLUXIPC_STATIC("/system/compiled", "Compiled endpoint", 0, compiled_ipc, NULL);
 ```
 
-Registering the same path again merges metadata: still-empty `summary`,
-`description` and `data` are filled; an existing handler is never overwritten.
+Registering the same path again merges metadata: still-empty `summary` and `data` are filled; an existing handler is never overwritten.
 
 ### Runtime mutation
 
 ```c
 fluxipc_node_t *root = fluxipc_tree_root();
 fluxipc_node_t *dir  = fluxipc_node_mkdir(root, "dynamic");
-fluxipc_node_leaf(dir, "leaf", &FLUXIPC_METHOD(fn, "dynamic leaf", NULL));
+fluxipc_node_leaf(dir, "leaf", &FLUXIPC_METHOD(fn, "dynamic leaf"));
 
 fluxipc_node_remove(dir);   // removes the subtree and prunes empty ancestors
 ```
@@ -285,7 +284,7 @@ src/
   fluxipc_tree.c         namespace tree
   fluxipc_sock.c         Unix-socket transport + client
   fluxipc_conn.c         non-blocking connection pool / select loop
-  fluxipc_interactive.c  REPL
+  fluxipc_interactive.c  REPL (linked into fluxipc-cli only)
 cli/
   fluxipc_cli.c          CLI entry point
 tests/

@@ -4,7 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <fcntl.h>
 #include <pthread.h>
 #include <errno.h>
 
@@ -57,7 +56,7 @@ static void *pump_fn(void *arg)
 {
     (void)arg;
     while (g_pump_run) {
-        int rc = fluxipc_poll(NULL);
+        int rc = fluxipc_poll();
         if (rc == -EINVAL || rc == -EBUSY) break;
     }
     return NULL;

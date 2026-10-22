@@ -11,19 +11,25 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <errno.h>
 #include <sys/socket.h>
 
 /* ── pool ────────────────────────────────────────────────────────────────── */
+
+static int pool_free_count(void)
+{
+    int n = 0;
+    for (int i = 0; i < FLUXIPC_MAX_CONNS; i++)
+        if (fluxipc_ut_conn(i)->fd < 0) n++;
+    return n;
+}
 
 static void test_pool_init_sets_free(void **state)
 {
     (void)state;
     conn_pool_init();
-    assert_int_equal(conn_pool_free_count(), FLUXIPC_MAX_CONNS);
-    assert_int_equal(fluxipc_ut_pool_size(), FLUXIPC_MAX_CONNS);
+    assert_int_equal(pool_free_count(), FLUXIPC_MAX_CONNS);
     conn_pool_init();   /* idempotent */
-    assert_int_equal(conn_pool_free_count(), FLUXIPC_MAX_CONNS);
+    assert_int_equal(pool_free_count(), FLUXIPC_MAX_CONNS);
 }
 
 static void test_pool_reset(void **state)
@@ -31,7 +37,7 @@ static void test_pool_reset(void **state)
     (void)state;
     conn_pool_init();
     conn_pool_reset();
-    assert_int_equal(conn_pool_free_count(), FLUXIPC_MAX_CONNS);
+    assert_int_equal(pool_free_count(), FLUXIPC_MAX_CONNS);
 }
 
 static void test_conn_slot_accessor(void **state)
@@ -55,7 +61,7 @@ static void test_pool_exhaustion(void **state)
         assert_true(fds[i] >= 0);
         assert_true(fluxipc_ut_conn_alloc(fds[i]) >= 0);
     }
-    assert_int_equal(conn_pool_free_count(), 0);
+    assert_int_equal(pool_free_count(), 0);
 
     int extra = open("/dev/null", O_RDONLY);
     assert_true(extra >= 0);
@@ -63,7 +69,7 @@ static void test_pool_exhaustion(void **state)
     close(extra);
 
     conn_pool_reset();
-    assert_int_equal(conn_pool_free_count(), FLUXIPC_MAX_CONNS);
+    assert_int_equal(pool_free_count(), FLUXIPC_MAX_CONNS);
 }
 
 /* ── response buffering ──────────────────────────────────────────────────── */
@@ -80,49 +86,7 @@ static void test_conn_close_null_safe(void **state)
     assert_int_equal(c.fd, -1);
 }
 
-static void test_conn_respond_basic(void **state)
-{
-    (void)state;
-    fluxipc_conn_t c;
-    memset(&c, 0, sizeof(c));
-    c.fd = -1;
-
-    assert_int_equal(conn_respond(&c, "hello", 5), 0);
-    assert_int_equal(c.wlen, 5);
-    assert_int_equal(c.woff, 0);
-    assert_int_equal(c.state, FLUXIPC_CONN_WRITING);
-    assert_memory_equal(c.wbuf, "hello", 5);
-    free(c.wbuf);
-}
-
-static void test_conn_respond_empty(void **state)
-{
-    (void)state;
-    fluxipc_conn_t c;
-    memset(&c, 0, sizeof(c));
-    c.fd = -1;
-    assert_int_equal(conn_respond(&c, NULL, 0), 0);
-    assert_int_equal(c.wlen, 0);
-    assert_int_equal(c.state, FLUXIPC_CONN_WRITING);
-    free(c.wbuf);
-}
-
-static void test_conn_respond_grows(void **state)
-{
-    (void)state;
-    fluxipc_conn_t c;
-    memset(&c, 0, sizeof(c));
-    c.fd = -1;
-    assert_int_equal(conn_respond(&c, "abc", 3), 0);
-    char big[4096];
-    memset(big, 'Z', sizeof(big));
-    assert_int_equal(conn_respond(&c, big, sizeof(big)), 0);
-    assert_int_equal(c.wlen, sizeof(big));
-    assert_memory_equal(c.wbuf, big, sizeof(big));
-    free(c.wbuf);
-}
-
-static void test_conn_respond_own(void **state)
+static void test_conn_respond(void **state)
 {
     (void)state;
     fluxipc_conn_t c;
@@ -133,7 +97,7 @@ static void test_conn_respond_own(void **state)
     assert_non_null(buf);
     memcpy(buf, "hello", 5);
 
-    assert_int_equal(conn_respond_own(&c, buf, 5), 0);
+    assert_int_equal(conn_respond(&c, buf, 5), 0);
     assert_ptr_equal(c.wbuf, buf);
     assert_int_equal(c.wlen, 5);
     assert_int_equal(c.woff, 0);
@@ -145,7 +109,7 @@ static void test_conn_respond_own(void **state)
     /* NULL connection still takes ownership and frees the buffer. */
     char *orphan = malloc(1);
     assert_non_null(orphan);
-    assert_int_equal(conn_respond_own(NULL, orphan, 1), -1);
+    assert_int_equal(conn_respond(NULL, orphan, 1), -1);
 }
 
 /* ── read state machine (socketpairs) ────────────────────────────────────── */
@@ -235,7 +199,7 @@ static void test_read_grows_request_buffer(void **state)
     fluxipc_ut_conn_read(NULL, c);
     assert_int_equal(c->state, FLUXIPC_CONN_READING);
     assert_true(c->rcap > initial_cap);      /* buffer grew */
-    assert_true(c->need > c->rlen);          /* still incomplete */
+    assert_true(c->rlen < sizeof(fluxipc_req_hdr_t) + 2 + 40000);
 
     close(sv[1]);
     fluxipc_ut_conn_read(NULL, c);
@@ -256,8 +220,10 @@ static void test_write_to_closed_peer(void **state)
     fluxipc_conn_t *c = fluxipc_ut_conn(idx);
 
     close(sv[1]);
-    assert_int_equal(conn_respond(c, "payload", 7), 0);
-    fluxipc_ut_conn_write(c);       /* EPIPE → close */
+    char *payload = strdup("payload");
+    assert_non_null(payload);
+    assert_int_equal(conn_respond(c, payload, 7), 0);
+    fluxipc_ut_conn_write(c);       /* EPIPE → close (frees payload) */
     assert_int_equal(c->fd, -1);
     conn_pool_reset();
 }
@@ -297,7 +263,6 @@ static void test_write_partial_then_drain(void **state)
     }
     assert_int_equal(c->fd, -1);       /* one response per connection */
 
-    free(big);
     conn_pool_reset();
 }
 
@@ -352,10 +317,7 @@ int ut_conn(void)
         cmocka_unit_test(test_conn_slot_accessor),
         cmocka_unit_test(test_pool_exhaustion),
         cmocka_unit_test(test_conn_close_null_safe),
-        cmocka_unit_test(test_conn_respond_basic),
-        cmocka_unit_test(test_conn_respond_empty),
-        cmocka_unit_test(test_conn_respond_grows),
-        cmocka_unit_test(test_conn_respond_own),
+        cmocka_unit_test(test_conn_respond),
         cmocka_unit_test(test_read_partial_then_complete),
         cmocka_unit_test(test_read_peer_closed),
         cmocka_unit_test(test_read_grows_request_buffer),

@@ -266,17 +266,14 @@ static void register_device(const char *base, const char *name,
     char path[FLUXIPC_PATH_MAX];
 
     snprintf(path, sizeof(path), "%s/name", base);
-    fluxipc_register_method(path, &FLUXIPC_METHOD_D(
-        device_name_ipc, ctx, "Get or set the device name", NULL));
+    fluxipc_register_method(path, &FLUXIPC_METHOD_D(device_name_ipc, ctx, "Get or set the device name"));
 
     snprintf(path, sizeof(path), "%s/value", base);
     fluxipc_register_method(path, &FLUXIPC_METHOD_D(
-        device_value_ipc, ctx, "Get or set the device value (range checked)",
-        NULL));
+        device_value_ipc, ctx, "Get or set the device value (range checked)"));
 
     snprintf(path, sizeof(path), "%s/info", base);
-    fluxipc_register_method(path, &FLUXIPC_METHOD_D(
-        device_info_ipc, ctx, "Show full device info", NULL));
+    fluxipc_register_method(path, &FLUXIPC_METHOD_D(device_info_ipc, ctx, "Show full device info"));
 }
 
 /* ==========================================================================
@@ -286,15 +283,13 @@ static void register_device(const char *base, const char *name,
 static void req_pre_hook(const fluxipc_event_t *ev, void *user)
 {
     (void)user;
-    printf("[hook:pre ] %-4s %-5s %s matched=%d\n",
-           ev->transport, ev->method, ev->path, ev->matched);
+    printf("[hook:pre ] %s matched=%d\n", ev->path, ev->matched);
 }
 
 static void req_post_hook(const fluxipc_event_t *ev, void *user)
 {
     (void)user;
-    printf("[hook:post] %-4s %-5s %s status=%d\n",
-           ev->transport, ev->method, ev->path, ev->status);
+    printf("[hook:post] %s status=%d\n", ev->path, ev->status);
 }
 
 /* ==========================================================================
@@ -305,21 +300,21 @@ static void register_endpoints(void)
 {
     /* One row per endpoint: intermediate containers are created for us. */
     static const fluxipc_endpoint_t endpoints[] = {
-        { "/system/info",     FLUXIPC_METHOD(system_info_ipc,     "Show server process info", NULL) },
-        { "/system/uptime",   FLUXIPC_METHOD(system_uptime_ipc,   "Show server uptime", NULL) },
-        { "/system/version",  FLUXIPC_METHOD(system_version_ipc,  "Show server version and build date", NULL) },
-        { "/system/shutdown", FLUXIPC_METHOD(system_shutdown_ipc, "Gracefully stop the server", NULL) },
+        { "/system/info",     FLUXIPC_METHOD(system_info_ipc, "Show server process info") },
+        { "/system/uptime",   FLUXIPC_METHOD(system_uptime_ipc, "Show server uptime") },
+        { "/system/version",  FLUXIPC_METHOD(system_version_ipc, "Show server version and build date") },
+        { "/system/shutdown", FLUXIPC_METHOD(system_shutdown_ipc, "Gracefully stop the server") },
 
-        { "/module/sensor/status", FLUXIPC_METHOD(sensor_status_ipc, "Query current sensor readings", NULL) },
-        { "/module/sensor/config", FLUXIPC_METHOD(sensor_config_ipc, "Get or set the sensor sample rate", NULL) },
+        { "/module/sensor/status", FLUXIPC_METHOD(sensor_status_ipc, "Query current sensor readings") },
+        { "/module/sensor/config", FLUXIPC_METHOD(sensor_config_ipc, "Get or set the sensor sample rate") },
 
-        { "/config/log_level",   FLUXIPC_METHOD(config_log_level_ipc,   "Get or set server log level (0-5)", NULL) },
-        { "/config/max_clients", FLUXIPC_METHOD(config_max_clients_ipc, "Get or set max concurrent clients", NULL) },
+        { "/config/log_level",   FLUXIPC_METHOD(config_log_level_ipc,   "Get or set server log level (0-5)") },
+        { "/config/max_clients", FLUXIPC_METHOD(config_max_clients_ipc, "Get or set max concurrent clients") },
 
-        { "/demo/echo",           FLUXIPC_METHOD(demo_echo_ipc,    "Echo back all arguments", NULL) },
-        { "/demo/counter",        FLUXIPC_METHOD(demo_counter_ipc, "Atomically increment and return counter", NULL) },
-        { "/demo/arithmetic/add", FLUXIPC_METHOD(demo_add_ipc,     "Add two integers", NULL) },
-        { "/demo/arithmetic/mul", FLUXIPC_METHOD(demo_mul_ipc,     "Multiply two integers", NULL) },
+        { "/demo/echo",           FLUXIPC_METHOD(demo_echo_ipc, "Echo back all arguments") },
+        { "/demo/counter",        FLUXIPC_METHOD(demo_counter_ipc, "Atomically increment and return counter") },
+        { "/demo/arithmetic/add", FLUXIPC_METHOD(demo_add_ipc, "Add two integers") },
+        { "/demo/arithmetic/mul", FLUXIPC_METHOD(demo_mul_ipc, "Multiply two integers") },
     };
     fluxipc_register_all(endpoints, sizeof(endpoints) / sizeof(endpoints[0]));
 

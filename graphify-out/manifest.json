@@ -10,18 +10,18 @@
     "semantic_hash": "7e96d4ea2bce1c027cc7d86392d51c77"
   },
   "cli/fluxipc_cli.c": {
-    "mtime": 1792641848.9656422,
-    "ast_hash": "29ef1951c4de377704197c6ea9d00921",
+    "mtime": 1792643930.8285916,
+    "ast_hash": "ab6821d3b22f811dacb9a80ed3ef0fd0",
     "semantic_hash": ""
   },
   "include/fluxipc.h": {
-    "mtime": 1792642002.6435573,
-    "ast_hash": "dfbbcbe4b75a1037e7bf82594e48654d",
+    "mtime": 1792643626.3613687,
+    "ast_hash": "f347c5ed927e33416d3b108256a662e8",
     "semantic_hash": ""
   },
   "include/fluxipc_internal.h": {
-    "mtime": 1792641808.9844275,
-    "ast_hash": "9e26ff1077fddbcb2c788088689fd780",
+    "mtime": 1792643064.9508712,
+    "ast_hash": "233f9ed59ea3acba171ecd4bdc2f5b01",
     "semantic_hash": ""
   },
   "packaging/install.sh": {
@@ -30,48 +30,48 @@
     "semantic_hash": "ac77bfc19235cef2293a1e458fd51812"
   },
   "src/fluxipc_core.c": {
-    "mtime": 1792642231.6340775,
-    "ast_hash": "4f6fe61b4fc54292413ca36a5b3c74ba",
+    "mtime": 1792643596.6851969,
+    "ast_hash": "d783e78442e60d12aec91be4638e26b0",
     "semantic_hash": ""
   },
   "src/fluxipc_interactive.c": {
-    "mtime": 1792401040.220136,
-    "ast_hash": "f81973ea66e57b7caad3710319d8c94a",
+    "mtime": 1792643143.7192042,
+    "ast_hash": "ec15fe7c26f547b79132bae853d048bd",
     "semantic_hash": ""
   },
   "src/fluxipc_sock.c": {
-    "mtime": 1792642282.9972332,
-    "ast_hash": "5739daa81e866f9822f0786b9f70eb4c",
+    "mtime": 1792643641.8987143,
+    "ast_hash": "bb05cefaf39b8dd2a71ba851bb8e0af3",
     "semantic_hash": ""
   },
   "src/fluxipc_tree.c": {
-    "mtime": 1792641828.115204,
-    "ast_hash": "62379c84abc1757644c1506f6791c794",
+    "mtime": 1792643010.944865,
+    "ast_hash": "b6db1c728236b4f3816fe01c7f37b667",
     "semantic_hash": ""
   },
   "tests/example_server.c": {
-    "mtime": 1792641986.0451584,
-    "ast_hash": "ddeeafcfd1e6538578deaa2f8a29f906",
+    "mtime": 1792642822.7608645,
+    "ast_hash": "71f4b98653b990f3e294e061e73c17c6",
     "semantic_hash": ""
   },
   "CLAUDE.md": {
-    "mtime": 1792642033.3584528,
-    "ast_hash": "470ab6e56658e0291f4192b0bb0274a3",
+    "mtime": 1792643419.6759384,
+    "ast_hash": "bf18eb95532b6a2eebef53d7fa5b46fe",
     "semantic_hash": ""
   },
   "CODEBASE_INDEX.md": {
-    "mtime": 1792642025.7485225,
-    "ast_hash": "9e9bca26f6aee2bff0a8680a2cbe6774",
+    "mtime": 1792643939.4323072,
+    "ast_hash": "7429a4ae3c58ecf87b8704cbd9248205",
     "semantic_hash": ""
   },
   "FluxIPC_CSDN.md": {
-    "mtime": 1792642073.853741,
-    "ast_hash": "438bcb805216c085200ac2b48774445c",
+    "mtime": 1792642849.5842881,
+    "ast_hash": "b8c0e7259278cec83948dd0dae5b2b3e",
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1792642126.4266622,
-    "ast_hash": "f6e586278f6bd7339fbff3c5b42ab738",
+    "mtime": 1792643583.6671596,
+    "ast_hash": "27bd23986d15ce5f45b3e8296cee59d1",
     "semantic_hash": ""
   },
   ".vscode/c_cpp_properties.json": {
@@ -90,8 +90,8 @@
     "semantic_hash": ""
   },
   "src/fluxipc_conn.c": {
-    "mtime": 1792642154.9782457,
-    "ast_hash": "78a341acf3956014c5b57892670a53db",
+    "mtime": 1792643073.0153978,
+    "ast_hash": "7d028010bacb07fcb28ebc17f413a93d",
     "semantic_hash": ""
   },
   "tests/integration/main.c": {
@@ -105,8 +105,8 @@
     "semantic_hash": ""
   },
   "tests/unit/test_conn.c": {
-    "mtime": 1792641937.57613,
-    "ast_hash": "e22a32e8190a0ee812227e5b21eb87bc",
+    "mtime": 1792643571.579815,
+    "ast_hash": "b8f1038a0892644e85372000e8db905a",
     "semantic_hash": ""
   },
   "tests/unit/test_protocol.c": {
@@ -115,8 +115,8 @@
     "semantic_hash": ""
   },
   "tests/unit/test_tree.c": {
-    "mtime": 1792641889.2652974,
-    "ast_hash": "9be13352fa77afca61308c2c665bd00c",
+    "mtime": 1792643851.5579097,
+    "ast_hash": "51e7fcfb4c1564b4107fe101e5c40f92",
     "semantic_hash": ""
   },
   "tests/tools/bootstrap.sh": {
@@ -125,8 +125,8 @@
     "semantic_hash": ""
   },
   "tests/tools/coverage.sh": {
-    "mtime": 1792642211.4478898,
-    "ast_hash": "2340f200aa2886d33c1ca2d3aa9410a7",
+    "mtime": 1792643454.413827,
+    "ast_hash": "cbd6adab3be5c093d61f02a3d6c43dcf",
     "semantic_hash": ""
   },
   "tests/tools/env.sh": {
@@ -135,8 +135,8 @@
     "semantic_hash": ""
   },
   "tests/tools/mutate.sh": {
-    "mtime": 1792642002.6430228,
-    "ast_hash": "d3b8765ddaf0d5c4340779ab218146c9",
+    "mtime": 1792643454.4139597,
+    "ast_hash": "1378940d6fb709ea25d709c2d8627ec9",
     "semantic_hash": ""
   },
   "tests/unit/test_cli.c": {
@@ -145,8 +145,8 @@
     "semantic_hash": ""
   },
   "tests/unit/test_core.c": {
-    "mtime": 1792642246.5791712,
-    "ast_hash": "c1ce61deaba2d210d6d5a9b22f92e5c3",
+    "mtime": 1792642882.6501217,
+    "ast_hash": "60db19d1c80b46d782c791c86b0aceba",
     "semantic_hash": ""
   },
   "tests/unit/test_interactive.c": {
@@ -160,8 +160,8 @@
     "semantic_hash": ""
   },
   "tests/unit/ut_common.c": {
-    "mtime": 1792641974.5185046,
-    "ast_hash": "0c5ab5025b58fba36cba2377ad92ea65",
+    "mtime": 1792643764.6393178,
+    "ast_hash": "075972480d128bb32b40aff5a200096c",
     "semantic_hash": ""
   },
   "tests/unit/ut_common.h": {
@@ -175,8 +175,8 @@
     "semantic_hash": ""
   },
   "README.zh-CN.md": {
-    "mtime": 1792642126.4268355,
-    "ast_hash": "a2394a7f569f969df8420fbc34985f6c",
+    "mtime": 1792643583.667317,
+    "ast_hash": "a51228947af128e09b06099693b0b18e",
     "semantic_hash": ""
   },
   "mull.yml": {
@@ -185,8 +185,8 @@
     "semantic_hash": ""
   },
   "tests/UNIT_TEST_PLAN.md": {
-    "mtime": 1792642207.4133127,
-    "ast_hash": "3c9a69cf878edf53f87eba99bd58bb7d",
+    "mtime": 1792643945.0512867,
+    "ast_hash": "a15f91288b5a06239d4885a5949bdcd8",
     "semantic_hash": ""
   },
   "tests/bench/bench.c": {

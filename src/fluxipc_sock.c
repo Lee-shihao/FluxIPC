@@ -21,10 +21,8 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <limits.h>
 
 #define IPC_OUT_CAP (64 * 1024)
-#define IPC_ARG_MAX (1024 * 1024)
 
 static int set_nonblocking(int fd)
 {
@@ -43,34 +41,44 @@ int sock_server_create(fluxipc_ctx_t *ctx)
              "%s/%s.sock", ctx->run_dir, ctx->prog_name);
 #pragma GCC diagnostic pop
 
-    unlink(ctx->sock_path);
-
-    ctx->server_fd = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (ctx->server_fd < 0) { perror("fluxipc: socket"); return -errno; }
-
     struct sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    memcpy(addr.sun_path, ctx->sock_path,
-           strnlen(ctx->sock_path, sizeof(addr.sun_path) - 1) + 1);
+    size_t slen = strlen(ctx->sock_path);
+    if (slen >= sizeof(addr.sun_path)) {
+        ctx->sock_path[0] = '\0';
+        return -ENAMETOOLONG;
+    }
+    memcpy(addr.sun_path, ctx->sock_path, slen + 1);
 
-    mode_t old_umask = umask(0);
-    int rc = bind(ctx->server_fd, (struct sockaddr *)&addr, sizeof(addr));
-    umask(old_umask);
+    unlink(ctx->sock_path);
 
-    if (rc < 0) {
+    ctx->server_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (ctx->server_fd < 0) {
+        int e = errno;
+        perror("fluxipc: socket");
+        return -e;
+    }
+
+    if (bind(ctx->server_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        int e = errno;
         perror("fluxipc: bind");
         close(ctx->server_fd); ctx->server_fd = -1;
-        return -errno;
+        return -e;
     }
     chmod(ctx->sock_path, 0666);
 
     if (listen(ctx->server_fd, 32) < 0) {
+        int e = errno;
         perror("fluxipc: listen");
         close(ctx->server_fd); ctx->server_fd = -1;
-        return -errno;
+        return -e;
     }
-    set_nonblocking(ctx->server_fd);
+    int nrc = set_nonblocking(ctx->server_fd);
+    if (nrc < 0) {
+        close(ctx->server_fd); ctx->server_fd = -1;
+        return nrc;
+    }
     return 0;
 }
 
@@ -85,7 +93,8 @@ void sock_server_close(fluxipc_ctx_t *ctx)
 static int send_unix_response(fluxipc_conn_t *c, int32_t status,
                               const void *data, size_t len)
 {
-    if (len > UINT32_MAX) return -1;
+    if (len > UINT32_MAX || len > SIZE_MAX - sizeof(fluxipc_resp_hdr_t))
+        return -1;
 
     fluxipc_resp_hdr_t h = {
         .magic    = FLUXIPC_PROTO_MAGIC,
@@ -93,27 +102,24 @@ static int send_unix_response(fluxipc_conn_t *c, int32_t status,
         .data_len = (uint32_t)len,
     };
     size_t total = sizeof(h) + len;
-    char *buf = malloc(total ? total : 1);
+    char *buf = malloc(total);
     if (!buf) return -1;
     memcpy(buf, &h, sizeof(h));
     if (len) memcpy(buf + sizeof(h), data, len);
-    return conn_respond_own(c, buf, total);
+    return conn_respond(c, buf, total);
 }
 
 int sock_conn_process(fluxipc_ctx_t *ctx, fluxipc_conn_t *c)
 {
     if (c->rlen < sizeof(fluxipc_req_hdr_t)) return 0;
-    if (c->need && c->rlen < c->need) return 0;
 
     fluxipc_req_hdr_t h;
     memcpy(&h, c->rbuf, sizeof(h));
-    if (h.magic != FLUXIPC_PROTO_MAGIC)        return -1;
-    if (h.path_len >= FLUXIPC_PATH_MAX)        return -1;
-    if (h.arg_len > IPC_ARG_MAX)               return -1;
+    if (h.magic != FLUXIPC_PROTO_MAGIC) return -1;
+    if (h.path_len >= FLUXIPC_PATH_MAX) return -1;
 
     size_t total = sizeof(h) + h.path_len + h.arg_len;
     if (total > FLUXIPC_RBUF_MAX) return -1;
-    c->need = total;
     if (c->rlen < total) return 0;
 
     /* ── FLUXIPC_OP_LIST: whole leaf manifest (text) ── */
@@ -242,13 +248,18 @@ static int client_send_request(int fd, uint16_t op, const char *path,
 
 static int client_connect(const char *sock_path)
 {
+    if (!sock_path || !sock_path[0]) return -EINVAL;
+
+    struct sockaddr_un addr;
+    size_t slen = strlen(sock_path);
+    if (slen >= sizeof(addr.sun_path)) return -ENAMETOOLONG;
+
     int fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (fd < 0) return -errno;
 
-    struct sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", sock_path);
+    memcpy(addr.sun_path, sock_path, slen + 1);
 
     if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         int e = errno; close(fd); return -e;
@@ -263,9 +274,8 @@ int fluxipc_call(const char *sock_path, const char *ipc_path,
     int fd = client_connect(sock_path);
     if (fd < 0) return fd;
 
-    if (client_send_request(fd, FLUXIPC_OP_CALL, ipc_path, argc, argv) < 0) {
-        close(fd); return -EIO;
-    }
+    int rc = client_send_request(fd, FLUXIPC_OP_CALL, ipc_path, argc, argv);
+    if (rc < 0) { close(fd); return rc; }
 
     fluxipc_resp_hdr_t resp;
     if (recv_all(fd, &resp, sizeof(resp)) < 0) { close(fd); return -EIO; }
@@ -299,9 +309,8 @@ int sock_call_alloc(const char *sock_path, uint16_t op, const char *ipc_path,
     int fd = client_connect(sock_path);
     if (fd < 0) return fd;
 
-    if (client_send_request(fd, op, ipc_path, argc, argv) < 0) {
-        close(fd); return -EIO;
-    }
+    int rc = client_send_request(fd, op, ipc_path, argc, argv);
+    if (rc < 0) { close(fd); return rc; }
 
     fluxipc_resp_hdr_t resp;
     if (recv_all(fd, &resp, sizeof(resp)) < 0) { close(fd); return -EIO; }
@@ -318,7 +327,8 @@ int sock_call_alloc(const char *sock_path, uint16_t op, const char *ipc_path,
     }
     close(fd);
 
+    size_t rlen = buf ? resp.data_len : 0;
     if (out) *out = buf; else free(buf);
-    if (out_len) *out_len = buf ? resp.data_len : 0;
+    if (out_len) *out_len = rlen;
     return resp.status;
 }
