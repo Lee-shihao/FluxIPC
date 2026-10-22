@@ -40,8 +40,3 @@ extern int g_fails;
                __FILE__, __LINE__, _a ? _a : "(null)", _b ? _b : "(null)");\
     }                                                                      \
 } while (0)
-
-void ut_tree(void);
-void ut_util(void);
-void ut_protocol(void);
-void ut_conn(void);

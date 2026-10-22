@@ -47,12 +47,27 @@ static size_t build_call(unsigned char *buf, uint16_t op,
     return off;
 }
 
+static size_t build_call_raw(unsigned char *buf, uint16_t op,
+                             const char *path, const char *args, size_t alen)
+{
+    size_t plen = path ? strlen(path) : 0;
+    fluxipc_req_hdr_t h = {
+        .magic = FLUXIPC_PROTO_MAGIC, .op = op,
+        .path_len = (uint16_t)plen, .arg_len = (uint32_t)alen,
+    };
+    memcpy(buf, &h, sizeof(h));
+    size_t off = sizeof(h);
+    if (plen) { memcpy(buf + off, path, plen); off += plen; }
+    if (alen) { memcpy(buf + off, args, alen); off += alen; }
+    return off;
+}
+
 static void test_process_needs_header(void **state)
 {
     (void)state;
     fluxipc_ctx_t *ctx = g_ctx;
     fluxipc_conn_t c;
-    ut_conn_init(&c, "short", 5, FLUXIPC_CONN_UNIX);
+    ut_conn_init(&c, "short", 5);
     assert_int_equal(sock_conn_process(ctx, &c), 0);   /* needs more */
     ut_conn_free(&c);
 }
@@ -66,7 +81,7 @@ static void test_process_bad_magic(void **state)
     h->magic = 0xDEADBEEF;
 
     fluxipc_conn_t c;
-    ut_conn_init(&c, buf, n, FLUXIPC_CONN_UNIX);
+    ut_conn_init(&c, buf, n);
     assert_int_equal(sock_conn_process(g_ctx, &c), -1);
     ut_conn_free(&c);
 }
@@ -79,24 +94,24 @@ static void test_process_invalid_lengths(void **state)
 
     size_t n = build_call(buf, FLUXIPC_OP_CALL, "/x", NULL);
     ((fluxipc_req_hdr_t *)buf)->path_len = FLUXIPC_PATH_MAX;   /* too big */
-    ut_conn_init(&c, buf, n, FLUXIPC_CONN_UNIX);
+    ut_conn_init(&c, buf, n);
     assert_int_equal(sock_conn_process(g_ctx, &c), -1);
     ut_conn_free(&c);
 
     n = build_call(buf, FLUXIPC_OP_CALL, "/x", NULL);
     ((fluxipc_req_hdr_t *)buf)->arg_len = 2 * 1024 * 1024;     /* too big */
-    ut_conn_init(&c, buf, n, FLUXIPC_CONN_UNIX);
+    ut_conn_init(&c, buf, n);
     assert_int_equal(sock_conn_process(g_ctx, &c), -1);
     ut_conn_free(&c);
 
     n = build_call(buf, 99, "/x", NULL);                       /* bad op */
-    ut_conn_init(&c, buf, n, FLUXIPC_CONN_UNIX);
+    ut_conn_init(&c, buf, n);
     assert_int_equal(sock_conn_process(g_ctx, &c), -1);
     ut_conn_free(&c);
 
     n = build_call(buf, FLUXIPC_OP_CALL, "/x", NULL);
     ((fluxipc_req_hdr_t *)buf)->arg_len = FLUXIPC_RBUF_MAX;    /* total too big */
-    ut_conn_init(&c, buf, n, FLUXIPC_CONN_UNIX);
+    ut_conn_init(&c, buf, n);
     assert_int_equal(sock_conn_process(g_ctx, &c), -1);
     ut_conn_free(&c);
 }
@@ -108,14 +123,11 @@ static void test_process_call(void **state)
     fluxipc_method_t m = { .ipc = ut_ipc_echo, .data = (void *)"hello" };
     fluxipc_node_leaf(root, "echo", &m);
 
-    /* args are NUL-separated strings; handler here ignores them */
     unsigned char buf[128];
-    const char *args = "one\0two\0";
     size_t n = build_call(buf, FLUXIPC_OP_CALL, "/echo", NULL);
-    (void)args;
 
     fluxipc_conn_t c;
-    ut_conn_init(&c, buf, n, FLUXIPC_CONN_UNIX);
+    ut_conn_init(&c, buf, n);
     assert_int_equal(sock_conn_process(g_ctx, &c), 1);
     assert_int_equal(c.wlen, sizeof(fluxipc_resp_hdr_t) + 5);
     fluxipc_resp_hdr_t rh;
@@ -131,18 +143,19 @@ static void test_process_list(void **state)
 {
     (void)state;
     fluxipc_node_t *root = fluxipc_tree_root();
-    fluxipc_method_t m = { .ipc = ut_ipc_echo };
+    fluxipc_method_t m = { .ipc = ut_ipc_echo, .summary = "listed" };
     fluxipc_node_leaf(root, "x", &m);
 
     unsigned char buf[64];
     size_t n = build_call(buf, FLUXIPC_OP_LIST, "", NULL);
     fluxipc_conn_t c;
-    ut_conn_init(&c, buf, n, FLUXIPC_CONN_UNIX);
+    ut_conn_init(&c, buf, n);
     assert_int_equal(sock_conn_process(g_ctx, &c), 1);
     fluxipc_resp_hdr_t rh;
     memcpy(&rh, c.wbuf, sizeof(rh));
     assert_int_equal(rh.status, 0);
-    assert_non_null(memmem(c.wbuf + sizeof(rh), rh.data_len, "leaves", 6));
+    assert_non_null(memmem(c.wbuf + sizeof(rh), rh.data_len, "/x", 2));
+    assert_non_null(memmem(c.wbuf + sizeof(rh), rh.data_len, "listed", 6));
     ut_conn_free(&c);
 }
 
@@ -219,21 +232,6 @@ static int record_ipc(void *d, int argc, char **argv,
     return 0;
 }
 
-static size_t build_call_raw(unsigned char *buf, uint16_t op,
-                             const char *path, const char *args, size_t alen)
-{
-    size_t plen = path ? strlen(path) : 0;
-    fluxipc_req_hdr_t h = {
-        .magic = FLUXIPC_PROTO_MAGIC, .op = op,
-        .path_len = (uint16_t)plen, .arg_len = (uint32_t)alen,
-    };
-    memcpy(buf, &h, sizeof(h));
-    size_t off = sizeof(h);
-    if (plen) { memcpy(buf + off, path, plen); off += plen; }
-    if (alen) { memcpy(buf + off, args, alen); off += alen; }
-    return off;
-}
-
 static void test_process_path_nul(void **state)
 {
     (void)state;
@@ -250,7 +248,7 @@ static void test_process_path_nul(void **state)
     memcpy(buf + sizeof(h), path, sizeof(path));
 
     fluxipc_conn_t c;
-    ut_conn_init(&c, buf, sizeof(h) + sizeof(path), FLUXIPC_CONN_UNIX);
+    ut_conn_init(&c, buf, sizeof(h) + sizeof(path));
     assert_int_equal(sock_conn_process(g_ctx, &c), -1);
     ut_conn_free(&c);
 }
@@ -263,10 +261,11 @@ static void test_process_args_multiple(void **state)
 
     const char args[] = "a\0bb\0ccc\0";
     unsigned char buf[64];
-    size_t n = build_call_raw(buf, FLUXIPC_OP_CALL, "/r", args, sizeof(args) - 1);
+    size_t n = build_call_raw(buf, FLUXIPC_OP_CALL, "/r", args,
+                              sizeof(args) - 1);
 
     fluxipc_conn_t c;
-    ut_conn_init(&c, buf, n, FLUXIPC_CONN_UNIX);
+    ut_conn_init(&c, buf, n);
     assert_int_equal(sock_conn_process(g_ctx, &c), 1);
     assert_int_equal(g_argc_seen, 3);
     assert_string_equal(g_argv_seen[0], "a");
@@ -284,7 +283,7 @@ static void test_process_args_empty(void **state)
     unsigned char buf[64];
     size_t n = build_call_raw(buf, FLUXIPC_OP_CALL, "/r", NULL, 0);
     fluxipc_conn_t c;
-    ut_conn_init(&c, buf, n, FLUXIPC_CONN_UNIX);
+    ut_conn_init(&c, buf, n);
     assert_int_equal(sock_conn_process(g_ctx, &c), 1);
     assert_int_equal(g_argc_seen, 0);
     ut_conn_free(&c);
@@ -308,7 +307,7 @@ static void test_process_args_limit(void **state)
     unsigned char buf[512];
     size_t n = build_call_raw(buf, FLUXIPC_OP_CALL, "/r", args, alen);
     fluxipc_conn_t c;
-    ut_conn_init(&c, buf, n, FLUXIPC_CONN_UNIX);
+    ut_conn_init(&c, buf, n);
     assert_int_equal(sock_conn_process(g_ctx, &c), 1);
     assert_int_equal(g_argc_seen, FLUXIPC_MAX_ARGS);   /* capped */
     ut_conn_free(&c);
@@ -504,195 +503,6 @@ static void test_server_create_bind_failure(void **state)
     g_ctx->server_fd = saved_fd;
 }
 
-/* ── JSON representation over IPC ───────────────────────────────────────── */
-
-static int json_req_handler(void *d, const fluxipc_http_request_t *req,
-                            fluxipc_http_response_t *resp)
-{
-    (void)d;
-    cJSON *o = cJSON_CreateObject();
-    if (!o) return -ENOMEM;
-    cJSON_AddStringToObject(o, "method", req->method);
-    cJSON_AddNumberToObject(o, "verb", req->verb);
-    if (req->json) {
-        const cJSON *a = cJSON_GetObjectItemCaseSensitive(req->json, "a");
-        if (cJSON_IsNumber(a))
-            cJSON_AddNumberToObject(o, "a", a->valuedouble);
-    }
-    for (size_t i = 0; i < req->query_count; i++)
-        if (strcmp(req->query[i].key, "q") == 0)
-            cJSON_AddStringToObject(o, "q", req->query[i].value);
-    resp->json = o;
-    return 0;
-}
-
-static void test_call_json_body(void **state)
-{
-    (void)state;
-    fluxipc_method_t m = { .json = json_req_handler };
-    fluxipc_node_leaf(fluxipc_tree_root(), "json_body", &m);
-
-    char *params[] = { (char *)"{\"a\":7}" };
-    char *out = NULL;
-    size_t len = 0;
-    int rc = fluxipc_call_json(ut_server_sock(), "/json_body", "post",
-                               1, params, &out, &len);
-    assert_int_equal(rc, 0);
-    assert_non_null(out);
-
-    cJSON *j = cJSON_ParseWithLength(out, len);
-    assert_non_null(j);
-    assert_string_equal(cJSON_GetObjectItem(j, "method")->valuestring, "POST");
-    assert_int_equal(cJSON_GetObjectItem(j, "verb")->valueint, FLUXIPC_M_POST);
-    assert_int_equal(cJSON_GetObjectItem(j, "a")->valueint, 7);
-
-    cJSON_Delete(j);
-    free(out);
-}
-
-static void test_call_json_query(void **state)
-{
-    (void)state;
-    fluxipc_method_t m = { .json = json_req_handler };
-    fluxipc_node_leaf(fluxipc_tree_root(), "json_query", &m);
-
-    char *params[] = { (char *)"q=hello" };
-    char *out = NULL;
-    size_t len = 0;
-    int rc = fluxipc_call_json(ut_server_sock(), "/json_query", NULL,
-                               1, params, &out, &len);
-    assert_int_equal(rc, 0);
-    assert_non_null(out);
-
-    cJSON *j = cJSON_ParseWithLength(out, len);
-    assert_non_null(j);
-    assert_string_equal(cJSON_GetObjectItem(j, "method")->valuestring, "GET");
-    assert_string_equal(cJSON_GetObjectItem(j, "q")->valuestring, "hello");
-
-    cJSON_Delete(j);
-    free(out);
-}
-
-static void test_call_json_positional(void **state)
-{
-    (void)state;
-    fluxipc_method_t m = {
-        .json   = json_req_handler,
-        .schema = "{\"type\":\"object\",\"properties\":{"
-                  "\"a\":{\"type\":\"integer\"},"
-                  "\"b\":{\"type\":\"integer\"}}}",
-    };
-    fluxipc_node_leaf(fluxipc_tree_root(), "json_pos", &m);
-
-    char *params[] = { (char *)"7", (char *)"3" };
-    char *out = NULL;
-    size_t len = 0;
-    int rc = fluxipc_call_json(ut_server_sock(), "/json_pos", "GET",
-                               2, params, &out, &len);
-    assert_int_equal(rc, 0);
-    assert_non_null(out);
-
-    cJSON *j = cJSON_ParseWithLength(out, len);
-    assert_non_null(j);
-    assert_int_equal(cJSON_GetObjectItem(j, "a")->valueint, 7);
-
-    cJSON_Delete(j);
-    free(out);
-
-    /* more positional arguments than schema properties */
-    char *too_many[] = { (char *)"1", (char *)"2", (char *)"3" };
-    rc = fluxipc_call_json(ut_server_sock(), "/json_pos", "GET",
-                           3, too_many, &out, &len);
-    assert_int_equal(rc, -E2BIG);
-    assert_non_null(out);
-    cJSON_Delete(cJSON_ParseWithLength(out, len));
-    free(out);
-}
-
-static void test_call_json_positional_without_schema(void **state)
-{
-    (void)state;
-    fluxipc_method_t m = { .json = json_req_handler };
-    fluxipc_node_leaf(fluxipc_tree_root(), "json_noschema", &m);
-
-    char *params[] = { (char *)"7" };
-    char *out = NULL;
-    size_t len = 0;
-    int rc = fluxipc_call_json(ut_server_sock(), "/json_noschema", "GET",
-                               1, params, &out, &len);
-    assert_int_equal(rc, -EINVAL);
-    assert_non_null(out);
-
-    cJSON *j = cJSON_ParseWithLength(out, len);
-    assert_non_null(j);
-    assert_non_null(cJSON_GetObjectItem(j, "error")->valuestring);
-    cJSON_Delete(j);
-    free(out);
-}
-
-static void test_call_json_invalid_body(void **state)
-{
-    (void)state;
-    fluxipc_method_t m = { .json = json_req_handler };
-    fluxipc_node_leaf(fluxipc_tree_root(), "json_bad", &m);
-
-    char *params[] = { (char *)"{bad" };
-    char *out = NULL;
-    size_t len = 0;
-    int rc = fluxipc_call_json(ut_server_sock(), "/json_bad", "POST",
-                               1, params, &out, &len);
-    assert_int_equal(rc, -EINVAL);
-    assert_non_null(out);
-
-    cJSON *j = cJSON_ParseWithLength(out, len);
-    assert_non_null(j);
-    assert_int_equal(cJSON_GetObjectItem(j, "code")->valueint, -EINVAL);
-
-    cJSON_Delete(j);
-    free(out);
-}
-
-static void test_call_json_no_http_handler(void **state)
-{
-    (void)state;
-    fluxipc_method_t m = { .ipc = ut_ipc_echo, .data = (void *)"TEXT" };
-    fluxipc_node_leaf(fluxipc_tree_root(), "json_ipc_only", &m);
-
-    char *out = NULL;
-    size_t len = 0;
-    int rc = fluxipc_call_json(ut_server_sock(), "/json_ipc_only", NULL,
-                               0, NULL, &out, &len);
-    assert_int_equal(rc, -ENOSYS);
-    assert_non_null(out);
-
-    cJSON *j = cJSON_ParseWithLength(out, len);
-    assert_non_null(j);
-    assert_int_equal(cJSON_GetObjectItem(j, "code")->valueint, -ENOSYS);
-    assert_non_null(cJSON_GetObjectItem(j, "error")->valuestring);
-
-    cJSON_Delete(j);
-    free(out);
-}
-
-static void test_call_json_invalid_args(void **state)
-{
-    (void)state;
-    char *out = NULL;
-    size_t len = 0;
-
-    assert_int_equal(fluxipc_call_json(ut_server_sock(), "/x", NULL,
-                                       0, NULL, NULL, &len), -EINVAL);
-
-    char *params[FLUXIPC_MAX_ARGS];
-    for (int i = 0; i < FLUXIPC_MAX_ARGS; i++) params[i] = (char *)"x";
-    assert_int_equal(fluxipc_call_json(ut_server_sock(), "/x", NULL,
-                                       FLUXIPC_MAX_ARGS, params,
-                                       &out, &len), -EINVAL);
-
-    assert_int_equal(fluxipc_call_json(ut_server_sock(), "/x", "BOGUS",
-                                       0, NULL, &out, &len), -EINVAL);
-}
-
 int ut_sock(void)
 {
     const struct CMUnitTest tests[] = {
@@ -737,20 +547,6 @@ int ut_sock(void)
         cmocka_unit_test_setup_teardown(test_call_alloc_truncated_body,
                                         sock_setup, sock_teardown),
         cmocka_unit_test_setup_teardown(test_client_null_path_and_len,
-                                        sock_setup, sock_teardown),
-        cmocka_unit_test_setup_teardown(test_call_json_body,
-                                        sock_setup, sock_teardown),
-        cmocka_unit_test_setup_teardown(test_call_json_query,
-                                        sock_setup, sock_teardown),
-        cmocka_unit_test_setup_teardown(test_call_json_positional,
-                                        sock_setup, sock_teardown),
-        cmocka_unit_test_setup_teardown(test_call_json_positional_without_schema,
-                                        sock_setup, sock_teardown),
-        cmocka_unit_test_setup_teardown(test_call_json_invalid_body,
-                                        sock_setup, sock_teardown),
-        cmocka_unit_test_setup_teardown(test_call_json_no_http_handler,
-                                        sock_setup, sock_teardown),
-        cmocka_unit_test_setup_teardown(test_call_json_invalid_args,
                                         sock_setup, sock_teardown),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);

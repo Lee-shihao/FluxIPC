@@ -10,12 +10,10 @@
 #include <sys/stat.h>
 
 int ut_protocol(void);
-int ut_util(void);
 int ut_tree(void);
 int ut_core(void);
 int ut_sock(void);
 int ut_conn(void);
-int ut_http(void);
 int ut_interactive(void);
 int ut_cli(void);
 
@@ -32,12 +30,10 @@ int main(void)
 
 
     failed += ut_protocol();
-    failed += ut_util();
     failed += ut_tree();
     failed += ut_core();
     failed += ut_sock();
     failed += ut_conn();
-    failed += ut_http();
     failed += ut_interactive();
     failed += ut_cli();
 

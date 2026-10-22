@@ -21,10 +21,8 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <ctype.h>
 
 #define IPC_OUT_CAP (64 * 1024)
-#define IPC_ARG_MAX (1024 * 1024)
 
 static int set_nonblocking(int fd)
 {
@@ -43,34 +41,44 @@ int sock_server_create(fluxipc_ctx_t *ctx)
              "%s/%s.sock", ctx->run_dir, ctx->prog_name);
 #pragma GCC diagnostic pop
 
-    unlink(ctx->sock_path);
-
-    ctx->server_fd = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (ctx->server_fd < 0) { perror("fluxipc: socket"); return -errno; }
-
     struct sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    memcpy(addr.sun_path, ctx->sock_path,
-           strnlen(ctx->sock_path, sizeof(addr.sun_path) - 1) + 1);
+    size_t slen = strlen(ctx->sock_path);
+    if (slen >= sizeof(addr.sun_path)) {
+        ctx->sock_path[0] = '\0';
+        return -ENAMETOOLONG;
+    }
+    memcpy(addr.sun_path, ctx->sock_path, slen + 1);
 
-    mode_t old_umask = umask(0);
-    int rc = bind(ctx->server_fd, (struct sockaddr *)&addr, sizeof(addr));
-    umask(old_umask);
+    unlink(ctx->sock_path);
 
-    if (rc < 0) {
+    ctx->server_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (ctx->server_fd < 0) {
+        int e = errno;
+        perror("fluxipc: socket");
+        return -e;
+    }
+
+    if (bind(ctx->server_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        int e = errno;
         perror("fluxipc: bind");
         close(ctx->server_fd); ctx->server_fd = -1;
-        return -errno;
+        return -e;
     }
     chmod(ctx->sock_path, 0666);
 
     if (listen(ctx->server_fd, 32) < 0) {
+        int e = errno;
         perror("fluxipc: listen");
         close(ctx->server_fd); ctx->server_fd = -1;
-        return -errno;
+        return -e;
     }
-    set_nonblocking(ctx->server_fd);
+    int nrc = set_nonblocking(ctx->server_fd);
+    if (nrc < 0) {
+        close(ctx->server_fd); ctx->server_fd = -1;
+        return nrc;
+    }
     return 0;
 }
 
@@ -83,142 +91,48 @@ void sock_server_close(fluxipc_ctx_t *ctx)
 /* ─── Per-connection request processor ────────────────────────────────────── */
 
 static int send_unix_response(fluxipc_conn_t *c, int32_t status,
-                              const void *data, uint32_t len)
+                              const void *data, size_t len)
 {
+    if (len > UINT32_MAX || len > SIZE_MAX - sizeof(fluxipc_resp_hdr_t))
+        return -1;
+
     fluxipc_resp_hdr_t h = {
         .magic    = FLUXIPC_PROTO_MAGIC,
         .status   = status,
-        .data_len = len,
+        .data_len = (uint32_t)len,
     };
     size_t total = sizeof(h) + len;
     char *buf = malloc(total);
     if (!buf) return -1;
     memcpy(buf, &h, sizeof(h));
     if (len) memcpy(buf + sizeof(h), data, len);
-    return conn_respond_own(c, buf, total);
-}
-
-static int send_json_error(fluxipc_conn_t *c, int rc,
-                           const char *path, const char *msg)
-{
-    cJSON *o = cJSON_CreateObject();
-    if (!o) return -1;
-    cJSON_AddStringToObject(o, "error", msg);
-    cJSON_AddNumberToObject(o, "code", rc);
-    if (path) cJSON_AddStringToObject(o, "path", path);
-
-    char *s = cJSON_PrintUnformatted(o);
-    cJSON_Delete(o);
-    if (!s) return -1;
-
-    int r = send_unix_response(c, rc, s, (uint32_t)strlen(s));
-    free(s);
-    return r < 0 ? -1 : 1;
-}
-
-/* FLUXIPC_OP_CALL_JSON: method\0 followed by a JSON body, key=value pairs,
- * or positional arguments bound to the leaf's JSON Schema properties. */
-static int sock_conn_json(fluxipc_ctx_t *ctx, fluxipc_conn_t *c,
-                          const char *path, int argc, char **argv)
-{
-    const char *method = "GET";
-    int first = 0;
-
-    if (argc > 0 && fluxipc_method_to_mask(argv[0]) != 0) {
-        method = argv[0];
-        first  = 1;
-    }
-
-    const char *body = NULL;
-    size_t      body_len = 0;
-    cJSON      *parsed = NULL;
-    fluxipc_kv_t query[FLUXIPC_MAX_ARGS];
-    size_t       query_count = 0;
-
-    if (argc - first == 1 &&
-        (argv[first][0] == '{' || argv[first][0] == '[')) {
-        body     = argv[first];
-        body_len = strlen(body);
-        parsed   = cJSON_ParseWithLength(body, body_len);
-        if (!parsed)
-            return send_json_error(c, -EINVAL, path, "invalid JSON body");
-    } else if (argc > first) {
-        int named = 0, positional = 0;
-        for (int i = first; i < argc; i++) {
-            if (strchr(argv[i], '=')) named++;
-            else                      positional++;
-        }
-
-        if (named && positional)
-            return send_json_error(c, -EINVAL, path,
-                                   "cannot mix key=value and positional arguments");
-
-        if (named) {
-            for (int i = first; i < argc; i++) {
-                char *eq = strchr(argv[i], '=');
-                if (!eq || eq == argv[i])
-                    return send_json_error(c, -EINVAL, path,
-                                           "expected key=value");
-                *eq = '\0';
-                query[query_count].key   = argv[i];
-                query[query_count].value = eq + 1;
-                query_count++;
-            }
-        } else {
-            int brc = fluxipc_json_bind_positional(ctx, path, argc - first,
-                                                   argv + first, &parsed);
-            if (brc < 0) {
-                const char *msg = brc == -E2BIG
-                    ? "too many positional arguments for the endpoint schema"
-                    : "positional arguments require a JSON schema with properties; "
-                      "use key=value or a JSON body";
-                return send_json_error(c, brc, path, msg);
-            }
-        }
-    }
-
-    char  *out = NULL;
-    size_t out_len = 0;
-    int rc = fluxipc_dispatch_json(ctx, path, method,
-                                   query, query_count,
-                                   body, body_len, parsed,
-                                   &out, &out_len);
-    cJSON_Delete(parsed);
-
-    int r = send_unix_response(c, rc, out, (uint32_t)out_len);
-    free(out);
-    return r < 0 ? -1 : 1;
+    return conn_respond(c, buf, total);
 }
 
 int sock_conn_process(fluxipc_ctx_t *ctx, fluxipc_conn_t *c)
 {
     if (c->rlen < sizeof(fluxipc_req_hdr_t)) return 0;
-    if (c->need && c->rlen < c->need) return 0;
 
     fluxipc_req_hdr_t h;
     memcpy(&h, c->rbuf, sizeof(h));
-    if (h.magic != FLUXIPC_PROTO_MAGIC)        return -1;
-    if (h.path_len >= FLUXIPC_PATH_MAX)        return -1;
-    if (h.arg_len > IPC_ARG_MAX)               return -1;
+    if (h.magic != FLUXIPC_PROTO_MAGIC) return -1;
+    if (h.path_len >= FLUXIPC_PATH_MAX) return -1;
 
     size_t total = sizeof(h) + h.path_len + h.arg_len;
     if (total > FLUXIPC_RBUF_MAX) return -1;
-    c->need = total;
     if (c->rlen < total) return 0;
 
-    /* ── FLUXIPC_OP_LIST: whole leaf manifest (JSON) ── */
+    /* ── FLUXIPC_OP_LIST: whole leaf manifest (text) ── */
     if (h.op == FLUXIPC_OP_LIST) {
-        cJSON *m = fluxipc_build_manifest(ctx->root, 1, 0);
-        if (!m) return -1;
-        char *body = cJSON_PrintUnformatted(m);
-        cJSON_Delete(m);
+        size_t mlen = 0;
+        char *body = fluxipc_build_manifest(ctx->root, &mlen);
         if (!body) return -1;
-        int r = send_unix_response(c, 0, body, (uint32_t)strlen(body));
+        int r = send_unix_response(c, 0, body, mlen);
         free(body);
         return r < 0 ? -1 : 1;
     }
-    if (h.op != FLUXIPC_OP_CALL && h.op != FLUXIPC_OP_CALL_JSON)
-        return -1;
+
+    if (h.op != FLUXIPC_OP_CALL) return -1;
 
     const char *raw_path = c->rbuf + sizeof(h);
     if (memchr(raw_path, '\0', h.path_len) != NULL) return -1;
@@ -238,9 +152,6 @@ int sock_conn_process(fluxipc_ctx_t *ctx, fluxipc_conn_t *c)
         p = nul + 1;
     }
 
-    if (h.op == FLUXIPC_OP_CALL_JSON)
-        return sock_conn_json(ctx, c, path, argc, argv);
-
     /* ── FLUXIPC_OP_CALL: invoke the leaf's IPC handler ── */
     if (!ctx->ipc_out) {
         ctx->ipc_out = malloc(IPC_OUT_CAP);
@@ -251,7 +162,7 @@ int sock_conn_process(fluxipc_ctx_t *ctx, fluxipc_conn_t *c)
                                   ctx->ipc_out, IPC_OUT_CAP, &out_len);
     if (rc < 0) out_len = 0;
 
-    int r = send_unix_response(c, rc, ctx->ipc_out, (uint32_t)out_len);
+    int r = send_unix_response(c, rc, ctx->ipc_out, out_len);
     return r < 0 ? -1 : 1;
 }
 
@@ -296,11 +207,18 @@ static int recv_all(int fd, void *buf, size_t len)
 static int client_send_request(int fd, uint16_t op, const char *path,
                                int argc, char **argv)
 {
-    if (argc < 0 || argc > FLUXIPC_MAX_ARGS) return -EINVAL;
+    if (argc < 0 || argc > FLUXIPC_MAX_ARGS || (argc > 0 && !argv))
+        return -EINVAL;
 
     size_t plen = path ? strlen(path) : 0;
+    if (plen > UINT16_MAX) return -EINVAL;
+
     size_t arg_total = 0;
-    for (int i = 0; i < argc; i++) arg_total += strlen(argv[i]) + 1;
+    for (int i = 0; i < argc; i++) {
+        size_t n = strlen(argv[i]) + 1;
+        if (arg_total > UINT32_MAX - n) return -E2BIG;
+        arg_total += n;
+    }
 
     fluxipc_req_hdr_t req = {
         .magic    = FLUXIPC_PROTO_MAGIC,
@@ -330,13 +248,18 @@ static int client_send_request(int fd, uint16_t op, const char *path,
 
 static int client_connect(const char *sock_path)
 {
+    if (!sock_path || !sock_path[0]) return -EINVAL;
+
+    struct sockaddr_un addr;
+    size_t slen = strlen(sock_path);
+    if (slen >= sizeof(addr.sun_path)) return -ENAMETOOLONG;
+
     int fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (fd < 0) return -errno;
 
-    struct sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", sock_path);
+    memcpy(addr.sun_path, sock_path, slen + 1);
 
     if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         int e = errno; close(fd); return -e;
@@ -351,9 +274,8 @@ int fluxipc_call(const char *sock_path, const char *ipc_path,
     int fd = client_connect(sock_path);
     if (fd < 0) return fd;
 
-    if (client_send_request(fd, FLUXIPC_OP_CALL, ipc_path, argc, argv) < 0) {
-        close(fd); return -EIO;
-    }
+    int rc = client_send_request(fd, FLUXIPC_OP_CALL, ipc_path, argc, argv);
+    if (rc < 0) { close(fd); return rc; }
 
     fluxipc_resp_hdr_t resp;
     if (recv_all(fd, &resp, sizeof(resp)) < 0) { close(fd); return -EIO; }
@@ -367,7 +289,7 @@ int fluxipc_call(const char *sock_path, const char *ipc_path,
         size_t rem = resp.data_len - to_read;
         while (rem > 0) {
             size_t n = rem < sizeof(drain) ? rem : sizeof(drain);
-            recv_all(fd, drain, n);
+            if (recv_all(fd, drain, n) < 0) break;
             rem -= n;
         }
     } else if (out_len) {
@@ -376,40 +298,6 @@ int fluxipc_call(const char *sock_path, const char *ipc_path,
 
     close(fd);
     return resp.status;
-}
-
-int fluxipc_call_json(const char *sock_path, const char *ipc_path,
-                      const char *method,
-                      int paramc, char **params,
-                      char **out, size_t *out_len)
-{
-    if (out)     *out = NULL;
-    if (out_len) *out_len = 0;
-
-    if (!out || paramc < 0 || paramc + 1 > FLUXIPC_MAX_ARGS)
-        return -EINVAL;
-
-    char method_buf[8];
-    size_t mi = 0;
-    if (method && method[0]) {
-        for (; method[mi] && mi < sizeof(method_buf) - 1; mi++)
-            method_buf[mi] = (char)toupper((unsigned char)method[mi]);
-        method_buf[mi] = '\0';
-        if (fluxipc_method_to_mask(method_buf) == 0) return -EINVAL;
-    } else {
-        snprintf(method_buf, sizeof(method_buf), "GET");
-    }
-
-    char *wire[FLUXIPC_MAX_ARGS];
-    int n = 0;
-    wire[n++] = method_buf;
-    for (int i = 0; i < paramc; i++) {
-        if (!params || !params[i]) return -EINVAL;
-        wire[n++] = params[i];
-    }
-
-    return sock_call_alloc(sock_path, FLUXIPC_OP_CALL_JSON, ipc_path,
-                           n, wire, out, out_len);
 }
 
 int sock_call_alloc(const char *sock_path, uint16_t op, const char *ipc_path,
@@ -421,9 +309,8 @@ int sock_call_alloc(const char *sock_path, uint16_t op, const char *ipc_path,
     int fd = client_connect(sock_path);
     if (fd < 0) return fd;
 
-    if (client_send_request(fd, op, ipc_path, argc, argv) < 0) {
-        close(fd); return -EIO;
-    }
+    int rc = client_send_request(fd, op, ipc_path, argc, argv);
+    if (rc < 0) { close(fd); return rc; }
 
     fluxipc_resp_hdr_t resp;
     if (recv_all(fd, &resp, sizeof(resp)) < 0) { close(fd); return -EIO; }
@@ -440,7 +327,8 @@ int sock_call_alloc(const char *sock_path, uint16_t op, const char *ipc_path,
     }
     close(fd);
 
+    size_t rlen = buf ? resp.data_len : 0;
     if (out) *out = buf; else free(buf);
-    if (out_len) *out_len = buf ? resp.data_len : 0;
+    if (out_len) *out_len = rlen;
     return resp.status;
 }

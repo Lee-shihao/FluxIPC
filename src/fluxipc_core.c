@@ -1,16 +1,19 @@
 /**
  * fluxipc_core.c – library entry points
  *
- * Owns the global context, the namespace tree, dynamic registration, the
- * unified dispatch path, and the lifecycle / event loop.
+ * Owns the global context, the namespace tree, dynamic registration, IPC
+ * dispatch, the text manifest and the lifecycle / event loop.
+ *
+ * The library is deliberately single-poller: the host application decides
+ * which thread runs fluxipc_run() (or drives fluxipc_poll_timeout() itself).
+ * Registration and tree mutation are protected by tree_lock and may happen
+ * concurrently with the polling thread.
  */
 
 #include "fluxipc_internal.h"
-#include "fluxipc.h"
 
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
 #include <stdio.h>
 #include <errno.h>
 #include <unistd.h>
@@ -22,29 +25,10 @@ fluxipc_ctx_t *g_ctx = NULL;
 
 static void fluxipc_static_apply(void);   /* FLUXIPC_STATIC registry, defined below */
 
-/* ─── Method <-> mask helpers ─────────────────────────────────────────────── */
-
-int fluxipc_method_to_mask(const char *method)
+static int valid_prog_name(const char *name)
 {
-    if (!method) return 0;
-    if (strcmp(method, "GET")     == 0) return FLUXIPC_M_GET;
-    if (strcmp(method, "POST")    == 0) return FLUXIPC_M_POST;
-    if (strcmp(method, "PUT")     == 0) return FLUXIPC_M_PUT;
-    if (strcmp(method, "PATCH")   == 0) return FLUXIPC_M_PATCH;
-    if (strcmp(method, "DELETE")  == 0) return FLUXIPC_M_DELETE;
-    return 0;
-}
-
-const char *fluxipc_mask_to_method(uint32_t bit)
-{
-    switch (bit) {
-        case FLUXIPC_M_GET:    return "GET";
-        case FLUXIPC_M_POST:   return "POST";
-        case FLUXIPC_M_PUT:    return "PUT";
-        case FLUXIPC_M_PATCH:  return "PATCH";
-        case FLUXIPC_M_DELETE: return "DELETE";
-        default:               return NULL;
-    }
+    return name && name[0] &&
+           strlen(name) < FLUXIPC_NAME_MAX && !strchr(name, '/');
 }
 
 /* ─── Context allocation ──────────────────────────────────────────────────── */
@@ -53,18 +37,25 @@ static fluxipc_ctx_t *ctx_alloc(const char *prog_name)
 {
     fluxipc_ctx_t *ctx = calloc(1, sizeof(*ctx));
     if (!ctx) return NULL;
+
     snprintf(ctx->prog_name, FLUXIPC_NAME_MAX, "%s", prog_name);
     snprintf(ctx->run_dir, sizeof(ctx->run_dir),
              "/run/user/%d/%s-fluxipc", getuid(), prog_name);
     ctx->server_fd = -1;
-    ctx->http_fd   = -1;
     ctx->wake_fd   = -1;
     ctx->next_id   = 1;
-    ctx->running   = 1;
+    atomic_init(&ctx->running, 1);
+    atomic_init(&ctx->poll_busy, 0);
     pthread_mutex_init(&ctx->tree_lock, NULL);
+    pthread_mutex_init(&ctx->hook_lock, NULL);
 
     ctx->root = calloc(1, sizeof(fluxipc_node_t));
-    if (!ctx->root) { free(ctx); return NULL; }
+    if (!ctx->root) {
+        pthread_mutex_destroy(&ctx->hook_lock);
+        pthread_mutex_destroy(&ctx->tree_lock);
+        free(ctx);
+        return NULL;
+    }
     ctx->root->name[0]      = '/';
     ctx->root->name[1]      = '\0';
     ctx->root->full_path[0] = '/';
@@ -72,20 +63,39 @@ static fluxipc_ctx_t *ctx_alloc(const char *prog_name)
     return ctx;
 }
 
+static void ctx_free(fluxipc_ctx_t *ctx)
+{
+    if (!ctx) return;
+    if (ctx->sock_path[0]) unlink(ctx->sock_path);
+    rmdir(ctx->run_dir);   /* only succeeds when the runtime dir is empty */
+
+    pthread_mutex_lock(&ctx->tree_lock);
+    tree_destroy(ctx->root);
+    ctx->root = NULL;
+    pthread_mutex_unlock(&ctx->tree_lock);
+
+    if (ctx->wake_fd >= 0) close(ctx->wake_fd);
+    free(ctx->ipc_out);
+    pthread_mutex_destroy(&ctx->hook_lock);
+    pthread_mutex_destroy(&ctx->tree_lock);
+    free(ctx);
+}
+
 /* ─── fluxipc_server_init ─────────────────────────────────────────────────── */
 
-int fluxipc_server_init(const char *prog_name, uint16_t http_port)
+int fluxipc_server_init(const char *prog_name)
 {
     if (g_ctx) return -EALREADY;
-    if (!prog_name || !prog_name[0]) return -EINVAL;
+    if (!valid_prog_name(prog_name)) return -EINVAL;
 
     fluxipc_ctx_t *ctx = ctx_alloc(prog_name);
     if (!ctx) return -ENOMEM;
 
-    /* Wake select() for fluxipc_stop() without a periodic timeout. */
+    /* Wake select() for fluxipc_wakeup()/fluxipc_stop() without polling. */
     ctx->wake_fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
 
     conn_pool_init();
+
     /* /run/user/<uid>/ then /run/user/<uid>/<prog>-fluxipc/ */
     {
         char parent[PATH_MAX];
@@ -99,23 +109,12 @@ int fluxipc_server_init(const char *prog_name, uint16_t http_port)
 
     int rc = sock_server_create(ctx);
     if (rc < 0) {
-        if (ctx->wake_fd >= 0) close(ctx->wake_fd);
-        free(ctx->root);
-        free(ctx);
+        ctx_free(ctx);
         return rc;
     }
 
     g_ctx = ctx;
     fluxipc_static_apply();   /* install FLUXIPC_STATIC() endpoints, if any */
-
-    if (http_port > 0) {
-        rc = fluxipc_http_start(ctx, http_port);
-        if (rc < 0)
-            fprintf(stderr, "fluxipc: HTTP start on :%u failed: %d "
-                            "(continuing without HTTP)\n", http_port, rc);
-        /* Non-fatal: the server works fine without HTTP. */
-    }
-
     return 0;
 }
 
@@ -134,7 +133,7 @@ static int valid_segment(const char *name)
 
 fluxipc_node_t *fluxipc_node_mkdir(fluxipc_node_t *parent, const char *name)
 {
-    if (!g_ctx || !parent || !valid_segment(name) || parent->is_leaf) {
+    if (!g_ctx || !parent || !valid_segment(name) || node_is_leaf(parent)) {
         errno = EINVAL;
         return NULL;
     }
@@ -149,18 +148,16 @@ fluxipc_node_t *fluxipc_node_leaf(fluxipc_node_t *parent,
                                   const fluxipc_method_t *method)
 {
     if (!g_ctx || !parent || !valid_segment(name) ||
-        !method || (!method->ipc && !method->json)) {
+        !method || !method->ipc) {
         errno = EINVAL;
         return NULL;
     }
-    if (parent->is_leaf) { errno = EINVAL; return NULL; }
+    if (node_is_leaf(parent)) { errno = EINVAL; return NULL; }
 
     pthread_mutex_lock(&g_ctx->tree_lock);
     fluxipc_node_t *n = tree_leaf(parent, name, method);
     if (n) n->id = g_ctx->next_id++;
     pthread_mutex_unlock(&g_ctx->tree_lock);
-
-    if (!n) { errno = EEXIST; return NULL; }
     return n;
 }
 
@@ -171,8 +168,7 @@ static void free_subtree(fluxipc_node_t *node);   /* defined below */
 fluxipc_node_t *fluxipc_register_method(const char *path,
                                         const fluxipc_method_t *method)
 {
-    if (!g_ctx || !path || path[0] != '/' || !method ||
-        (!method->ipc && !method->json) ||
+    if (!g_ctx || !path || path[0] != '/' || !method || !method->ipc ||
         strlen(path) >= FLUXIPC_PATH_MAX) {
         errno = EINVAL;
         return NULL;
@@ -197,13 +193,11 @@ fluxipc_node_t *fluxipc_register_method(const char *path,
         memcpy(seg, p, len);
         seg[len] = '\0';
 
-        if (!valid_segment(seg)) goto fail;
-
         if (!slash) {                       /* final segment → leaf */
             fluxipc_node_t *leaf = tree_find_child(cur, seg);
             if (leaf) {
-                if (!leaf->is_leaf) { err = EEXIST; goto fail; }
-                tree_leaf_merge(leaf, method);   /* complete the other side */
+                if (!node_is_leaf(leaf)) { err = EEXIST; goto fail; }
+                tree_leaf_merge(leaf, method);   /* fill still-empty metadata */
             } else {
                 leaf = tree_leaf(cur, seg, method);
                 if (!leaf) { err = ENOMEM; goto fail; }
@@ -214,10 +208,10 @@ fluxipc_node_t *fluxipc_register_method(const char *path,
         }
 
         fluxipc_node_t *next = tree_find_child(cur, seg);
-        if (next && next->is_leaf) { err = EEXIST; goto fail; }
+        if (next && node_is_leaf(next)) { err = EEXIST; goto fail; }
         if (!next) {
             next = tree_mkdir(cur, seg);
-            if (!next) { err = ENOMEM; goto fail; }   /* only alloc can fail here */
+            if (!next) { err = ENOMEM; goto fail; }
             if (!first_created) first_created = next;
         }
         cur = next;
@@ -243,19 +237,6 @@ int fluxipc_register_all(const fluxipc_endpoint_t *endpoints, size_t count)
     return 0;
 }
 
-fluxipc_node_t *fluxipc_register_json(const char *path,
-                                      const fluxipc_method_t *method)
-{
-    if (!method || !method->json) { errno = EINVAL; return NULL; }
-    return fluxipc_register_method(path, method);
-}
-
-fluxipc_node_t *fluxipc_register_http(const char *path,
-                                      const fluxipc_method_t *method)
-{
-    return fluxipc_register_json(path, method);
-}
-
 /*
  * Classic main-branch entry point.  The shared-memory @p slot_sz is accepted
  * for source compatibility and ignored; @p usage maps to the leaf summary.
@@ -267,7 +248,6 @@ fluxipc_node_t *(fluxipc_register)(const char *path, const char *usage,
                                    fluxipc_handler_fn handler, void *data)
 {
     (void)slot_sz;
-    if (!handler) { errno = EINVAL; return NULL; }
     fluxipc_method_t m = {
         .ipc     = handler,
         .data    = data,
@@ -304,7 +284,7 @@ static void fluxipc_static_apply(void)
 {
     pthread_mutex_lock(&g_static_lock);
     for (fluxipc_entry_t *e = g_static_head; e; e = e->next)
-        fluxipc_register(e->path, e->usage, e->slot_data_sz, e->handler, e->data);
+        fluxipc_register(e->path, e->usage, 0, e->handler, e->data);
     pthread_mutex_unlock(&g_static_lock);
 }
 
@@ -350,7 +330,7 @@ void fluxipc_node_remove(fluxipc_node_t *node)
     free_subtree(node);
 
     /* prune now-empty ancestors */
-    while (p && p->parent && !p->is_leaf && !p->children) {
+    while (p && p->parent && !node_is_leaf(p) && !p->children) {
         fluxipc_node_t *gp = p->parent;
         unlink_from_parent(p);
         tree_node_free(p);
@@ -365,7 +345,7 @@ static int walk_leaves(fluxipc_node_t *node, fluxipc_leaf_cb cb, void *user,
                        int *stop)
 {
     int count = 0;
-    if (node->is_leaf) {
+    if (node_is_leaf(node)) {
         count++;
         if (cb(node, user)) *stop = 1;
         return count;
@@ -386,66 +366,89 @@ int fluxipc_node_leaves(fluxipc_node_t *node, fluxipc_leaf_cb cb, void *user)
     return count;
 }
 
-/* ─── Manifest (all leaves under a node) ──────────────────────────────────── */
+/* ─── Text manifest (all leaves under a node) ─────────────────────────────── */
 
 typedef struct {
-    cJSON      *arr;
-    const char *base;
-    int         recursive;
-    int         verbose;
-} manifest_ctx_t;
+    char  *buf;
+    size_t len;
+    size_t cap;
+    int    failed;
+} strbuf_t;
 
-static int manifest_leaf_cb(const fluxipc_node_t *leaf, void *user)
+static int sb_reserve(strbuf_t *b, size_t extra)
 {
-    manifest_ctx_t *mc = user;
-
-    if (!mc->recursive) {
-        const char *rel = (strcmp(mc->base, "/") == 0)
-                            ? leaf->full_path + 1
-                            : leaf->full_path + strlen(mc->base) + 1;
-        if (strchr(rel, '/')) return 0;   /* deeper than one level */
+    if (b->failed) return -ENOMEM;
+    if (extra > SIZE_MAX - b->len - 1) {
+        b->failed = 1;
+        return -ENOMEM;
     }
+    size_t need = b->len + extra + 1;
+    if (need <= b->cap) return 0;
 
-    cJSON *o = cJSON_CreateObject();
-    if (!o) return 0;
-    cJSON_AddStringToObject(o, "path", leaf->full_path);
-    cJSON_AddStringToObject(o, "name", leaf->name);
-    cJSON_AddNumberToObject(o, "id", leaf->id);
-
-    cJSON *methods = cJSON_AddArrayToObject(o, "methods");
-    for (int i = 0; i < 5 && methods; i++) {
-        uint32_t bit = 1u << i;
-        if (leaf->method.methods & bit) {
-            const char *nm = fluxipc_mask_to_method(bit);
-            if (nm) cJSON_AddItemToArray(methods, cJSON_CreateString(nm));
-        }
+    size_t cap = b->cap ? b->cap : 256;
+    while (cap < need) {
+        if (cap > SIZE_MAX / 2) { cap = need; break; }
+        cap *= 2;
     }
-    if (leaf->method.summary)
-        cJSON_AddStringToObject(o, "summary", leaf->method.summary);
-    if (mc->verbose && leaf->method.description)
-        cJSON_AddStringToObject(o, "description", leaf->method.description);
-    if (mc->verbose && leaf->method.schema) {
-        cJSON *schema = cJSON_Parse(leaf->method.schema);
-        if (schema) cJSON_AddItemToObject(o, "schema", schema);
-    }
-    cJSON_AddItemToArray(mc->arr, o);
+    char *nb = realloc(b->buf, cap);
+    if (!nb) { b->failed = 1; return -ENOMEM; }
+    b->buf = nb;
+    b->cap = cap;
     return 0;
 }
 
-cJSON *fluxipc_build_manifest(fluxipc_node_t *node, int recursive, int verbose)
+static void sb_append(strbuf_t *b, const char *s, size_t len)
 {
-    if (!node) return NULL;
-    cJSON *root = cJSON_CreateObject();
-    if (!root) return NULL;
-    cJSON_AddStringToObject(root, "path", node->full_path);
-    cJSON_AddStringToObject(root, "kind", "collection");
-    cJSON *arr = cJSON_AddArrayToObject(root, "leaves");
-    if (!arr) { cJSON_Delete(root); return NULL; }
+    if (len == 0 || sb_reserve(b, len) < 0) return;
+    memcpy(b->buf + b->len, s, len);
+    b->len += len;
+    b->buf[b->len] = '\0';
+}
 
-    manifest_ctx_t mc = { arr, node->full_path, recursive, verbose };
-    fluxipc_node_leaves(node, manifest_leaf_cb, &mc);
-    cJSON_AddNumberToObject(root, "count", cJSON_GetArraySize(arr));
-    return root;
+/** Append @p s with protocol delimiters replaced by spaces. */
+static void sb_append_field(strbuf_t *b, const char *s)
+{
+    if (!s) return;
+    size_t start = b->len;
+    size_t n = strlen(s);
+    sb_append(b, s, n);
+    if (b->failed) return;
+    for (size_t i = start; i < b->len; i++)
+        if (b->buf[i] == '\t' || b->buf[i] == '\n' || b->buf[i] == '\r')
+            b->buf[i] = ' ';
+}
+
+static int manifest_leaf_cb(const fluxipc_node_t *leaf, void *user)
+{
+    strbuf_t *b = user;
+
+    char idbuf[16];
+    int  n = snprintf(idbuf, sizeof(idbuf), "%u", leaf->id);
+    if (n > 0) sb_append(b, idbuf, (size_t)n);
+    sb_append(b, "\t", 1);
+    sb_append_field(b, leaf->full_path);
+    sb_append(b, "\t", 1);
+    sb_append_field(b, leaf->method.summary ? leaf->method.summary : "");
+    sb_append(b, "\n", 1);
+
+    return b->failed ? 1 : 0;
+}
+
+char *fluxipc_build_manifest(fluxipc_node_t *node, size_t *out_len)
+{
+    if (out_len) *out_len = 0;
+    if (!node) return NULL;
+
+    strbuf_t b = { 0 };
+    fluxipc_node_leaves(node, manifest_leaf_cb, &b);
+    if (b.failed) { free(b.buf); return NULL; }
+
+    if (!b.buf) {
+        b.buf = strdup("");
+        if (!b.buf) return NULL;
+    }
+    if (out_len) *out_len = b.len;
+    return b.buf;
 }
 
 /* ─── Accessors ───────────────────────────────────────────────────────────── */
@@ -462,12 +465,12 @@ const char *fluxipc_node_name(const fluxipc_node_t *n)
 
 const fluxipc_method_t *fluxipc_node_method(const fluxipc_node_t *n)
 {
-    return (n && n->is_leaf) ? &n->method : NULL;
+    return node_is_leaf(n) ? &n->method : NULL;
 }
 
 int fluxipc_node_is_leaf(const fluxipc_node_t *n)
 {
-    return n && n->is_leaf;
+    return node_is_leaf(n);
 }
 
 /* ─── Dispatch ────────────────────────────────────────────────────────────── */
@@ -476,26 +479,31 @@ int fluxipc_dispatch_ipc(fluxipc_ctx_t *ctx, const char *path,
                          int argc, char **argv,
                          void *out, size_t out_cap, size_t *out_len)
 {
+    if (out_len) *out_len = 0;
+    if (!ctx || !path) return -EINVAL;
+
     fluxipc_handler_fn handler = NULL;
     void              *data    = NULL;
 
-    if (out_len) *out_len = 0;
-
     pthread_mutex_lock(&ctx->tree_lock);
     fluxipc_node_t *node = tree_find_path(ctx->root, path);
-    if (node && node->is_leaf) {
+    if (node_is_leaf(node)) {
         handler = node->method.ipc;
         data    = node->method.data;
     }
     pthread_mutex_unlock(&ctx->tree_lock);
 
+    pthread_mutex_lock(&ctx->hook_lock);
+    fluxipc_request_hook_fn pre  = ctx->pre_hook;
+    fluxipc_request_hook_fn post = ctx->post_hook;
+    void                   *user = ctx->hook_user;
+    pthread_mutex_unlock(&ctx->hook_lock);
+
     fluxipc_event_t ev = {
-        .transport = "ipc",
-        .method    = "CALL",
-        .path      = path,
-        .matched   = handler ? 1 : 0,
+        .path    = path,
+        .matched = handler ? 1 : 0,
     };
-    if (ctx->pre_hook) ctx->pre_hook(&ev, ctx->hook_user);
+    if (pre) pre(&ev, user);
 
     int rc = handler ? handler(data, argc, argv, out, out_cap, out_len)
                      : -ENOENT;
@@ -503,211 +511,7 @@ int fluxipc_dispatch_ipc(fluxipc_ctx_t *ctx, const char *path,
     ev.status  = rc;
     ev.raw     = out;
     ev.raw_len = out_len ? *out_len : 0;
-    if (ctx->post_hook) ctx->post_hook(&ev, ctx->hook_user);
-    return rc;
-}
-
-static int dispatch_json_ex(fluxipc_ctx_t *ctx, fluxipc_json_request_t *req,
-                            fluxipc_json_response_t *resp,
-                            const char *transport, const char *event_method)
-{
-    fluxipc_json_handler_fn handler = NULL;
-    void                   *data    = NULL;
-
-    /* Parse the verb string once, at the framework boundary. */
-    if (req->verb == 0 && req->method)
-        req->verb = (uint32_t)fluxipc_method_to_mask(req->method);
-
-    pthread_mutex_lock(&ctx->tree_lock);
-    fluxipc_node_t *node = tree_find_path(ctx->root, req->path);
-    req->node = node;
-    if (node && node->is_leaf) {
-        handler   = node->method.json;
-        data      = node->method.data;
-        req->data = data;
-    }
-    pthread_mutex_unlock(&ctx->tree_lock);
-
-    fluxipc_event_t ev = {
-        .transport = transport,
-        .method    = event_method,
-        .path      = req->path,
-        .matched   = handler ? 1 : 0,
-    };
-    if (ctx->pre_hook) ctx->pre_hook(&ev, ctx->hook_user);
-
-    int rc = handler ? handler(data, req, resp) : -ENOSYS;
-
-    ev.status = rc;
-    ev.json   = resp->json;
-    if (ctx->post_hook) ctx->post_hook(&ev, ctx->hook_user);
-    return rc;
-}
-
-int fluxipc_dispatch_http(fluxipc_ctx_t *ctx, fluxipc_json_request_t *req,
-                          fluxipc_json_response_t *resp)
-{
-    return dispatch_json_ex(ctx, req, resp, "http", req->method);
-}
-
-int fluxipc_dispatch_json(fluxipc_ctx_t *ctx, const char *path,
-                          const char *method,
-                          const fluxipc_kv_t *query, size_t query_count,
-                          const char *body, size_t body_len,
-                          const cJSON *json,
-                          char **out, size_t *out_len)
-{
-    if (!ctx || !path || !out || !out_len) return -EINVAL;
-    *out     = NULL;
-    *out_len = 0;
-
-    fluxipc_json_request_t req = {
-        .method       = method ? method : "GET",
-        .verb         = (uint32_t)fluxipc_method_to_mask(method ? method : "GET"),
-        .path         = path,
-        .query        = query,
-        .query_count  = query_count,
-        .content_type = body ? "application/json" : NULL,
-        .body         = body,
-        .body_len     = body_len,
-        .json         = json,
-    };
-    fluxipc_json_response_t resp = { 0 };
-
-    int rc = dispatch_json_ex(ctx, &req, &resp, "ipc", "CALL_JSON");
-
-    /* Always return a JSON document, including for errors. */
-    if (!resp.json) {
-        resp.json = cJSON_CreateObject();
-        if (!resp.json) return -ENOMEM;
-        if (rc < 0) {
-            cJSON_AddStringToObject(resp.json, "error",
-                                    rc == -ENOSYS
-                                        ? "endpoint has no JSON representation"
-                                        : strerror(-rc));
-            cJSON_AddNumberToObject(resp.json, "code", rc);
-            cJSON_AddStringToObject(resp.json, "path", path);
-        }
-    }
-
-    char *s = cJSON_PrintUnformatted(resp.json);
-    cJSON_Delete(resp.json);
-    if (!s) return -ENOMEM;
-
-    *out     = s;
-    *out_len = strlen(s);
-    return rc;
-}
-
-/* ─── Positional JSON arguments → schema-bound object ─────────────────────── */
-
-static cJSON *json_scalar_from_text(fluxipc_schema_type_t type, const char *text)
-{
-    switch (type) {
-    case FLUXIPC_SCHEMA_INTEGER:
-    case FLUXIPC_SCHEMA_NUMBER: {
-        char  *end = NULL;
-        double d = strtod(text, &end);
-        if (end != text && end && *end == '\0')
-            return cJSON_CreateNumber(d);
-        return NULL;
-    }
-    case FLUXIPC_SCHEMA_BOOLEAN:
-        if (strcasecmp(text, "true") == 0 || strcmp(text, "1") == 0)
-            return cJSON_CreateTrue();
-        if (strcasecmp(text, "false") == 0 || strcmp(text, "0") == 0)
-            return cJSON_CreateFalse();
-        return NULL;
-    case FLUXIPC_SCHEMA_OBJECT:
-    case FLUXIPC_SCHEMA_ARRAY: {
-        cJSON *v = cJSON_Parse(text);
-        if (!v) return NULL;
-        if ((type == FLUXIPC_SCHEMA_OBJECT && !cJSON_IsObject(v)) ||
-            (type == FLUXIPC_SCHEMA_ARRAY && !cJSON_IsArray(v))) {
-            cJSON_Delete(v);
-            return NULL;
-        }
-        return v;
-    }
-    default:
-        return cJSON_CreateString(text);
-    }
-}
-
-static cJSON *json_array_from_args(fluxipc_schema_type_t item_type,
-                                   char **argv, int argc)
-{
-    cJSON *arr = cJSON_CreateArray();
-    if (!arr) return NULL;
-
-    for (int i = 0; i < argc; i++) {
-        cJSON *v = json_scalar_from_text(item_type, argv[i]);
-        if (!v) { cJSON_Delete(arr); return NULL; }
-        cJSON_AddItemToArray(arr, v);
-    }
-    return arr;
-}
-
-static int bind_schema_fields(const fluxipc_schema_field_t *fields,
-                              size_t count, int argc, char **argv,
-                              cJSON **out)
-{
-    cJSON *bound = cJSON_CreateObject();
-    if (!bound) return -ENOMEM;
-
-    int used = 0;
-    for (size_t i = 0; i < count && used < argc; i++) {
-        const char *name = fields[i].name;
-        if (!name) continue;
-
-        cJSON *value = NULL;
-        /* A trailing array property collects the remaining arguments. */
-        if (i == count - 1 && fields[i].type == FLUXIPC_SCHEMA_ARRAY) {
-            value = json_array_from_args(
-                (fluxipc_schema_type_t)fields[i].item_type,
-                argv + used, argc - used);
-            used = argc;
-        } else {
-            value = json_scalar_from_text(
-                (fluxipc_schema_type_t)fields[i].type, argv[used]);
-            used++;
-        }
-
-        if (!value) {
-            cJSON_Delete(bound);
-            return -EINVAL;
-        }
-        /* Field names are owned by the node and outlive the response. */
-        cJSON_AddItemToObjectCS(bound, name, value);
-    }
-
-    if (used < argc) {
-        cJSON_Delete(bound);
-        return -E2BIG;
-    }
-
-    *out = bound;
-    return 0;
-}
-
-int fluxipc_json_bind_positional(fluxipc_ctx_t *ctx, const char *path,
-                                 int argc, char **argv, cJSON **out)
-{
-    if (!ctx || !path || !out || argc < 1) return -EINVAL;
-    *out = NULL;
-
-    int rc = -EINVAL;
-
-    pthread_mutex_lock(&ctx->tree_lock);
-    fluxipc_node_t *node = tree_find_path(ctx->root, path);
-    if (node && node->is_leaf) {
-        size_t count = 0;
-        const fluxipc_schema_field_t *fields =
-            tree_node_schema_fields(node, &count);
-        if (fields && count > 0)
-            rc = bind_schema_fields(fields, count, argc, argv, out);
-    }
-    pthread_mutex_unlock(&ctx->tree_lock);
+    if (post) post(&ev, user);
     return rc;
 }
 
@@ -717,47 +521,85 @@ void fluxipc_set_request_hooks(fluxipc_request_hook_fn pre,
                                fluxipc_request_hook_fn post, void *user)
 {
     if (!g_ctx) return;
+    pthread_mutex_lock(&g_ctx->hook_lock);
     g_ctx->pre_hook  = pre;
     g_ctx->post_hook = post;
     g_ctx->hook_user = user;
+    pthread_mutex_unlock(&g_ctx->hook_lock);
 }
 
-/* ─── Poll / stop / destroy ───────────────────────────────────────────────── */
+/* ─── Poll / run / stop / destroy ─────────────────────────────────────────── */
 
-int fluxipc_poll(void *unused)
+int fluxipc_poll_timeout(int timeout_ms)
 {
-    (void)unused;
-    if (!g_ctx || !g_ctx->running) return -EINVAL;
-    return conn_poll(g_ctx);
+    if (!g_ctx) return -EINVAL;
+    if (!atomic_load_explicit(&g_ctx->running, memory_order_acquire))
+        return -EINVAL;
+
+    /* Enforce the single-poller contract, even if the host misuses the API. */
+    if (atomic_exchange_explicit(&g_ctx->poll_busy, 1,
+                                 memory_order_acquire))
+        return -EBUSY;
+
+    int rc = conn_poll(g_ctx, timeout_ms);
+
+    atomic_store_explicit(&g_ctx->poll_busy, 0, memory_order_release);
+    return rc;
+}
+
+int fluxipc_poll(void)
+{
+    return fluxipc_poll_timeout(-1);
+}
+
+int fluxipc_run(void)
+{
+    if (!g_ctx) return -EINVAL;
+
+    for (;;) {
+        if (!atomic_load_explicit(&g_ctx->running, memory_order_acquire))
+            return 0;
+
+        int rc = fluxipc_poll_timeout(-1);
+        if (rc < 0) {
+            if (!atomic_load_explicit(&g_ctx->running, memory_order_acquire))
+                return 0;
+            return rc;
+        }
+    }
+}
+
+int fluxipc_is_running(void)
+{
+    return g_ctx &&
+           atomic_load_explicit(&g_ctx->running, memory_order_acquire);
+}
+
+void fluxipc_wakeup(void)
+{
+    if (!g_ctx || g_ctx->wake_fd < 0) return;
+    uint64_t one = 1;
+    ssize_t  n = write(g_ctx->wake_fd, &one, sizeof(one));
+    (void)n;
 }
 
 void fluxipc_stop(void)
 {
     if (!g_ctx) return;
-    g_ctx->running = 0;
-    if (g_ctx->wake_fd >= 0) {
-        uint64_t one = 1;
-        ssize_t  n = write(g_ctx->wake_fd, &one, sizeof(one));
-        (void)n;
-    }
+    atomic_store_explicit(&g_ctx->running, 0, memory_order_release);
+    fluxipc_wakeup();
 }
 
 void fluxipc_destroy(void)
 {
     if (!g_ctx) return;
-    fluxipc_ctx_t *ctx = g_ctx; g_ctx = NULL;
+    fluxipc_ctx_t *ctx = g_ctx;
+    g_ctx = NULL;
+
+    atomic_store_explicit(&ctx->running, 0, memory_order_release);
     conn_pool_reset();
-    fluxipc_http_stop(ctx);
     sock_server_close(ctx);
-    rmdir(ctx->run_dir);   /* remove the now-empty per-app runtime dir */
-    pthread_mutex_lock(&ctx->tree_lock);
-    tree_destroy(ctx->root);
-    ctx->root = NULL;
-    pthread_mutex_unlock(&ctx->tree_lock);
-    pthread_mutex_destroy(&ctx->tree_lock);
-    if (ctx->wake_fd >= 0) close(ctx->wake_fd);
-    free(ctx->ipc_out);
-    free(ctx);
+    ctx_free(ctx);
 }
 
 /* ─── List endpoints (socket introspection) ───────────────────────────────── */
@@ -765,35 +607,45 @@ void fluxipc_destroy(void)
 int fluxipc_list_endpoints(const char *prog_name,
                            fluxipc_list_cb cb, void *userdata)
 {
-    if (!prog_name || !prog_name[0] || !cb) return -EINVAL;
+    if (!cb || !valid_prog_name(prog_name)) return -EINVAL;
 
     char sock_path[FLUXIPC_PATH_MAX];
     snprintf(sock_path, sizeof(sock_path),
              "/run/user/%d/%s-fluxipc/%s.sock", getuid(), prog_name, prog_name);
 
-    char *out = NULL;
+    char  *out = NULL;
     size_t out_len = 0;
     int rc = sock_call_alloc(sock_path, FLUXIPC_OP_LIST, "", 0, NULL,
                              &out, &out_len);
     if (rc < 0) return rc;
+    if (!out) return 0;
 
-    cJSON *manifest = cJSON_ParseWithLength(out, out_len);
-    free(out);
-    if (!manifest) return -EIO;
+    /* Parse `<id>\t<path>\t<summary>\n` in place: the buffer is ours. */
+    char *p   = out;
+    char *end = out + out_len;
+    while (p < end) {
+        char *nl  = memchr(p, '\n', (size_t)(end - p));
+        char *eol = nl ? nl : end;
+        *eol = '\0';
 
-    const cJSON *leaves = cJSON_GetObjectItemCaseSensitive(manifest, "leaves");
-    const cJSON *leaf;
-    cJSON_ArrayForEach(leaf, leaves) {
-        const cJSON *p  = cJSON_GetObjectItemCaseSensitive(leaf, "path");
-        const cJSON *id = cJSON_GetObjectItemCaseSensitive(leaf, "id");
-        const cJSON *u  = cJSON_GetObjectItemCaseSensitive(leaf, "summary");
-        if (cJSON_IsString(p) && p->valuestring)
-            cb(p->valuestring,
-               cJSON_IsNumber(id) ? (uint32_t)id->valuedouble : 0,
-               (cJSON_IsString(u) && u->valuestring) ? u->valuestring : "",
-               userdata);
+        char *tab1 = memchr(p, '\t', (size_t)(eol - p));
+        if (tab1) {
+            *tab1 = '\0';
+            char *tab2 = memchr(tab1 + 1, '\t',
+                                (size_t)(eol - (tab1 + 1)));
+            if (tab2) {
+                *tab2 = '\0';
+                char *num_end = NULL;
+                unsigned long id = strtoul(p, &num_end, 10);
+                if (num_end != p && num_end && *num_end == '\0')
+                    cb(tab1 + 1, (uint32_t)id, tab2 + 1, userdata);
+            }
+        }
+
+        p = nl ? nl + 1 : end;
     }
-    cJSON_Delete(manifest);
+
+    free(out);
     return 0;
 }
 
@@ -804,7 +656,7 @@ static int usage_leaf_cb(const fluxipc_node_t *leaf, void *user)
     (void)user;
     const fluxipc_method_t *m = fluxipc_node_method(leaf);
     printf("  %-40s  %s\n", leaf->full_path,
-           (m && m->summary && m->summary[0]) ? m->summary : "(no description)");
+           (m && m->summary && m->summary[0]) ? m->summary : "(no summary)");
     return 0;
 }
 

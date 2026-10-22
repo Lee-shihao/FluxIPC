@@ -1,5 +1,5 @@
-SUMMARY = "FluxIPC shared memory IPC library"
-DESCRIPTION = "High-performance shared memory IPC framework"
+SUMMARY = "FluxIPC namespace-tree Unix-socket IPC library"
+DESCRIPTION = "Embeddable namespace-tree IPC library with host-owned event loop"
 HOMEPAGE = "https://example.com/fluxipc"
 SECTION = "libs"
 
@@ -12,8 +12,8 @@ S = "${WORKDIR}/FluxIPC-main"
 
 inherit pkgconfig
 
-# readline + cJSON 依赖
-DEPENDS += "readline cjson"
+# readline 依赖
+DEPENDS += "readline"
 
 # ─────────────────────────────────────────────
 # Build
@@ -62,5 +62,5 @@ FILES:${PN}-dbg += "\
 # 避免开发链接检查误报
 INSANE_SKIP:${PN} += "dev-so"
 
-# readline + cJSON runtime dependency
-RDEPENDS:${PN} += "readline cjson"
+# readline runtime dependency
+RDEPENDS:${PN} += "readline"
