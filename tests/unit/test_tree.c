@@ -2,7 +2,7 @@
  * test_tree.c – semantic tests for the namespace tree (no server required).
  *
  * Covers creation, lookup, name-slot collisions, ownership of method strings,
- * deep paths (the 64-component token cap) and destruction.
+ * deep paths and destruction.
  */
 
 #include "ut_common.h"
@@ -24,6 +24,12 @@ static fluxipc_node_t *make_root(void)
 }
 
 static int dummy_ipc(void *d, int c, char **v, void *o, size_t n, size_t *l)
+{
+    (void)d; (void)c; (void)v; (void)o; (void)n; (void)l;
+    return 0;
+}
+
+static int dummy_ipc2(void *d, int c, char **v, void *o, size_t n, size_t *l)
 {
     (void)d; (void)c; (void)v; (void)o; (void)n; (void)l;
     return 0;
@@ -107,7 +113,7 @@ static void test_leaf_invalid(void **state)
     fluxipc_node_t *root = make_root();
     fluxipc_node_t *a = tree_mkdir(root, "a");
 
-    /* no handlers at all */
+    /* no handler at all */
     fluxipc_method_t empty = { .summary = "x" };
     assert_null(tree_leaf(a, "nohandler", &empty));
     /* NULL args */
@@ -128,11 +134,8 @@ static void test_leaf_copies_method(void **state)
     strcpy(summary, "original");
     char desc[32];
     strcpy(desc, "d");
-    char schema[32];
-    strcpy(schema, "{}");
     fluxipc_method_t m = {
-        .ipc = dummy_ipc, .summary = summary,
-        .description = desc, .schema = schema, .methods = FLUXIPC_M_GET,
+        .ipc = dummy_ipc, .summary = summary, .description = desc,
     };
     fluxipc_node_t *n = tree_leaf(root, "n", &m);
     assert_non_null(n);
@@ -140,11 +143,8 @@ static void test_leaf_copies_method(void **state)
     /* the node owns copies, mutating the source must not leak through */
     strcpy(summary, "CHANGED");
     strcpy(desc, "CHANGED");
-    strcpy(schema, "CHANGED");
     assert_string_equal(n->method.summary, "original");
     assert_string_equal(n->method.description, "d");
-    assert_string_equal(n->method.schema, "{}");
-    assert_int_equal(n->method.methods, FLUXIPC_M_GET);
     assert_ptr_equal(n->method.ipc, dummy_ipc);
 
     /* NULL optional strings stay NULL */
@@ -152,19 +152,7 @@ static void test_leaf_copies_method(void **state)
     fluxipc_node_t *n2 = tree_leaf(root, "n2", &m2);
     assert_null(n2->method.summary);
     assert_null(n2->method.description);
-    assert_null(n2->method.schema);
 
-    tree_destroy(root);
-}
-
-static void test_leaf_default_methods(void **state)
-{
-    (void)state;
-    fluxipc_node_t *root = make_root();
-    fluxipc_method_t m = { .ipc = dummy_ipc, .methods = 0 };
-    fluxipc_node_t *n = tree_leaf(root, "n", &m);
-    assert_non_null(n);
-    assert_int_equal(n->method.methods, FLUXIPC_M_DEFAULT);
     tree_destroy(root);
 }
 
@@ -176,6 +164,35 @@ static void test_leaf_existing_name_fails(void **state)
     assert_non_null(tree_leaf(a, "b", &M));
     assert_null(tree_leaf(a, "b", &M));   /* leaf name taken */
     assert_null(tree_leaf(root, "a", &M)); /* container name taken */
+    tree_destroy(root);
+}
+
+static void test_leaf_merge(void **state)
+{
+    (void)state;
+    fluxipc_node_t *root = make_root();
+
+    fluxipc_method_t first = { .ipc = dummy_ipc };
+    fluxipc_node_t *n = tree_leaf(root, "n", &first);
+    assert_non_null(n);
+
+    /* Existing handler is kept; empty metadata is filled. */
+    fluxipc_method_t second = {
+        .ipc = dummy_ipc2, .summary = "sum", .description = "desc",
+    };
+    tree_leaf_merge(n, &second);
+    assert_ptr_equal(n->method.ipc, dummy_ipc);
+    assert_string_equal(n->method.summary, "sum");
+    assert_string_equal(n->method.description, "desc");
+
+    /* A later merge never overwrites. */
+    fluxipc_method_t third = {
+        .ipc = dummy_ipc2, .summary = "other", .description = "other",
+    };
+    tree_leaf_merge(n, &third);
+    assert_string_equal(n->method.summary, "sum");
+    assert_string_equal(n->method.description, "desc");
+
     tree_destroy(root);
 }
 
@@ -237,74 +254,6 @@ static void test_destroy_handles_null(void **state)
     tree_destroy(root);
 }
 
-/* ── cached schema fields for positional CALL_JSON ───────────────────────── */
-
-static void test_schema_field_cache(void **state)
-{
-    (void)state;
-    fluxipc_node_t *root = make_root();
-
-    fluxipc_method_t m = {
-        .ipc = dummy_ipc,
-        .schema = FLUXIPC_SCHEMA(
-            FLUXIPC_PROP_INT("a") "," FLUXIPC_PROP_ARRAY("b", "string")),
-    };
-    fluxipc_node_t *n = tree_leaf(root, "schema", &m);
-    assert_non_null(n);
-
-    size_t count = 0;
-    const fluxipc_schema_field_t *f = tree_node_schema_fields(n, &count);
-    assert_non_null(f);
-    assert_int_equal(count, 2);
-    assert_string_equal(f[0].name, "a");
-    assert_int_equal(f[0].type, FLUXIPC_SCHEMA_INTEGER);
-    assert_string_equal(f[1].name, "b");
-    assert_int_equal(f[1].type, FLUXIPC_SCHEMA_ARRAY);
-    assert_int_equal(f[1].item_type, FLUXIPC_SCHEMA_STRING);
-
-    /* The parsed field list is cached. */
-    size_t count2 = 0;
-    assert_ptr_equal(tree_node_schema_fields(n, &count2), f);
-    assert_int_equal(count2, 2);
-
-    tree_destroy(root);
-}
-
-static void test_schema_field_cache_merge_and_invalid(void **state)
-{
-    (void)state;
-    fluxipc_node_t *root = make_root();
-
-    fluxipc_method_t ipc_only = { .ipc = dummy_ipc };
-    fluxipc_node_t *n = tree_leaf(root, "m", &ipc_only);
-    assert_non_null(n);
-
-    size_t count = 99;
-    assert_null(tree_node_schema_fields(n, &count));
-    assert_int_equal(count, 0);
-
-    /* A later registration can add the schema; the empty cache is rebuilt. */
-    fluxipc_method_t with_schema = {
-        .schema = FLUXIPC_SCHEMA(FLUXIPC_PROP_STR("name")),
-    };
-    tree_leaf_merge(n, &with_schema);
-    const fluxipc_schema_field_t *f = tree_node_schema_fields(n, &count);
-    assert_non_null(f);
-    assert_int_equal(count, 1);
-    assert_string_equal(f[0].name, "name");
-    assert_int_equal(f[0].type, FLUXIPC_SCHEMA_STRING);
-
-    /* Invalid schema => no fields, but the failure is cached too. */
-    fluxipc_method_t bad = { .ipc = dummy_ipc, .schema = "not-json" };
-    fluxipc_node_t *b = tree_leaf(root, "bad", &bad);
-    assert_non_null(b);
-    count = 99;
-    assert_null(tree_node_schema_fields(b, &count));
-    assert_int_equal(count, 0);
-
-    tree_destroy(root);
-}
-
 int ut_tree(void)
 {
     const struct CMUnitTest tests[] = {
@@ -314,13 +263,11 @@ int ut_tree(void)
         cmocka_unit_test(test_mkdir_on_leaf_fails),
         cmocka_unit_test(test_leaf_invalid),
         cmocka_unit_test(test_leaf_copies_method),
-        cmocka_unit_test(test_leaf_default_methods),
         cmocka_unit_test(test_leaf_existing_name_fails),
+        cmocka_unit_test(test_leaf_merge),
         cmocka_unit_test(test_find_child_and_path),
         cmocka_unit_test(test_deep_path_walk),
         cmocka_unit_test(test_destroy_handles_null),
-        cmocka_unit_test(test_schema_field_cache),
-        cmocka_unit_test(test_schema_field_cache_merge_and_invalid),
     };
     return cmocka_run_group_tests(tests, NULL, NULL);
 }

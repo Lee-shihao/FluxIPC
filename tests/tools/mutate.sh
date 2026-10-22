@@ -32,9 +32,7 @@ if [ ! -x "$RUNNER" ] || [ ! -f "$FRONTEND" ]; then
     echo "error: Mull not found; run 'make tools'"; exit 1
 fi
 
-CJSON_CFLAGS="$(pkg-config --cflags libcjson 2>/dev/null || true)"
 RL_CFLAGS="$(pkg-config --cflags readline 2>/dev/null || true)"
-CJSON_LIBS="$(pkg-config --libs libcjson 2>/dev/null || echo -lcjson)"
 
 # -grecord-command-line lets Mull recover per-TU compiler flags; -fno-inline
 # keeps mutants visible at -O0.
@@ -45,8 +43,8 @@ CJSON_LIBS="$(pkg-config --libs libcjson 2>/dev/null || echo -lcjson)"
 SAN="-fsanitize=address,undefined -fno-sanitize-recover=all"
 MCFLAGS="-Wall -O0 -g -fno-inline -grecord-command-line -Iinclude \
  -I$TOOLS/usr/include -D_GNU_SOURCE -Wno-unused-parameter -DFLUXIPC_TESTING \
- $SAN -fpass-plugin=$FRONTEND $CJSON_CFLAGS $RL_CFLAGS"
-MLIBS="-lrt -lpthread -lreadline $CJSON_LIBS \
+ $SAN -fpass-plugin=$FRONTEND $RL_CFLAGS"
+MLIBS="-lrt -lpthread -lreadline \
  -L$TOOLS/usr/lib/x86_64-linux-gnu -lcmocka $SAN \
  -Wl,-rpath,$TOOLS/usr/lib/x86_64-linux-gnu"
 # Leak detection is disabled: the Mull runner's own allocations are reported
@@ -54,14 +52,11 @@ MLIBS="-lrt -lpthread -lreadline $CJSON_LIBS \
 export ASAN_OPTIONS="detect_leaks=0:abort_on_error=1:exitcode=99"
 
 LIB_SRCS=(src/fluxipc_core.c src/fluxipc_tree.c src/fluxipc_sock.c \
-          src/fluxipc_conn.c src/fluxipc_util.c src/fluxipc_http.c \
-          src/fluxipc_interactive.c)
+          src/fluxipc_conn.c src/fluxipc_interactive.c)
 UNIT_SRCS=(tests/unit/ut_main.c tests/unit/ut_common.c \
-           tests/unit/test_protocol.c tests/unit/test_util.c \
-           tests/unit/test_tree.c tests/unit/test_core.c \
+           tests/unit/test_protocol.c tests/unit/test_tree.c tests/unit/test_core.c \
            tests/unit/test_sock.c tests/unit/test_conn.c \
-           tests/unit/test_http.c tests/unit/test_interactive.c \
-           tests/unit/test_cli.c)
+           tests/unit/test_interactive.c tests/unit/test_cli.c)
 
 # The interactive module is pulled in by test_interactive.c.
 ULIB=()

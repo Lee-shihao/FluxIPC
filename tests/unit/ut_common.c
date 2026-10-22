@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <errno.h>
 
 /* ── server fixture ──────────────────────────────────────────────────────── */
 
@@ -21,13 +22,8 @@ const char *ut_next_name(void)
 
 const char *ut_server_up(void)
 {
-    return ut_server_up_port(0);
-}
-
-const char *ut_server_up_port(uint16_t port)
-{
     snprintf(g_prog, sizeof(g_prog), "%s", ut_next_name());
-    int rc = fluxipc_server_init(g_prog, port);
+    int rc = fluxipc_server_init(g_prog);
     assert_int_equal(rc, 0);
     return g_prog;
 }
@@ -60,7 +56,10 @@ static int           g_pump_started;
 static void *pump_fn(void *arg)
 {
     (void)arg;
-    while (g_pump_run) fluxipc_poll(NULL);
+    while (g_pump_run) {
+        int rc = fluxipc_poll(NULL);
+        if (rc == -EINVAL || rc == -EBUSY) break;
+    }
     return NULL;
 }
 
@@ -78,16 +77,17 @@ void ut_server_pump_stop(void)
     fluxipc_stop();          /* wake a blocking select() */
     pthread_join(g_pump, NULL);
     g_pump_started = 0;
+
+    /* Keep the fixture usable for teardown: destroy() only requires the
+     * polling thread to be gone, not that running is still true. */
 }
 
 /* ── fake connection ─────────────────────────────────────────────────────── */
 
-void ut_conn_init(fluxipc_conn_t *c, const void *data, size_t len,
-                  fluxipc_conn_kind_t kind)
+void ut_conn_init(fluxipc_conn_t *c, const void *data, size_t len)
 {
     memset(c, 0, sizeof(*c));
     c->fd    = -1;
-    c->kind  = kind;
     c->state = FLUXIPC_CONN_READING;
     if (len) {
         c->rbuf = malloc(len);
@@ -157,16 +157,5 @@ int ut_ipc_echo(void *data, int argc, char **argv,
     if (n > out_cap) n = out_cap;
     if (out) memcpy(out, msg, n);
     if (out_len) *out_len = n;
-    return 0;
-}
-
-int ut_http_ok(void *data, const fluxipc_http_request_t *req,
-               fluxipc_http_response_t *resp)
-{
-    (void)req;
-    resp->json = cJSON_CreateObject();
-    if (resp->json)
-        cJSON_AddStringToObject(resp->json, "handler",
-                                data ? (const char *)data : "ok");
     return 0;
 }

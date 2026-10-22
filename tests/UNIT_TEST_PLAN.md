@@ -1,78 +1,43 @@
-# FluxIPC 单元测试（UT）说明与实施方案
+# FluxIPC 测试说明
 
-> 本文档描述 FluxIPC 当前实际使用的测试体系：**cmocka**（单元测试框架）、
-> **Mull**（变异测试）、**gcovr**（覆盖率）、**ASan/UBSan**（内存与未定义行为）。
->
-> 目标：真实约束每个模块的语义与错误分支——行/分支覆盖率达标，
-> 并以**变异分数 > 70%** 作为正确性证据。
+> FluxIPC 现在只保留 Unix-socket IPC：没有 HTTP、没有 JSON、没有 cJSON 依赖。
+> 本文档描述当前测试体系：cmocka 单元测试、端到端 IPC 集成测试、
+> ASan/UBSan/LeakSanitizer、gcovr 覆盖率与 Mull 变异测试。
 
 ---
 
-## 1. 结论指标（实测）
-
-| 指标 | 门槛 | 实测 | 结果 |
-|------|------|------|------|
-| 单元用例 | — | **196 个**，全部通过 | ✅ |
-| 行覆盖率（src/） | ≥ 90% | **95.9%** | ✅ |
-| 分支覆盖率（src/） | ≥ 78% | **78.8%** | ✅ |
-| 变异分数 | **> 70%** | **75–76%**（`MUT_SCORE_MIN` 默认 70） | ✅ |
-| ASan + UBSan | 无错误/无泄漏 | 干净 | ✅ |
-
-逐文件覆盖率：
-
-| 文件 | 行 | 分支 |
-|------|----|------|
-| `fluxipc_util.c` | 100.0% | 91.9% |
-| `fluxipc_tree.c` | 100.0% | 87.2% |
-| `fluxipc_core.c` | 98.9% | 81.2% |
-| `fluxipc_http.c` | 98.2% | 78.8% |
-| `fluxipc_conn.c` | 97.3% | 78.6% |
-| `fluxipc_sock.c` | 96.8% | 74.6% |
-| `fluxipc_interactive.c` | 92.0% | 74.6% |
-
----
-
-## 2. 工具链
-
-全部工具解包到仓库内 `.tools/`，**不需要 root**：
-
-| 工具 | 版本 | 用途 |
-|------|------|------|
-| [cmocka](https://cmocka.org/) | 1.1.5 | 单元测试框架（fixture / 断言 / 分组） |
-| [Mull](https://mull.readthedocs.io/) | 0.34.1 (`mull-14`) | 基于 clang-14 插件的变异测试 |
-| gcovr | 5.0 | 覆盖率报告与阈值门禁 |
-| lcov | 1.15 | 备用覆盖率工具（`genhtml`） |
-| AddressSanitizer / UBSan | gcc 11 / clang 14 | 内存错误、未定义行为、泄漏检测 |
-
-安装（一次性）：
+## 1. 测试入口
 
 ```bash
-make tools            # 等价于 tests/tools/bootstrap.sh
+make ut          # cmocka 单元套件（纯，无需外部服务器）
+make it          # fork example_server 的端到端 IPC 套件
+make test        # ut + it
+make test-mem    # 单元 + 集成 ASan/UBSan/LeakSanitizer
+make it-asan     # 插桩服务端 + 集成套件
+make bench       # 延迟/吞吐/RSS 基线
+make cov         # 覆盖率报告与阈值门禁
+make mutate      # Mull 变异测试与分数门禁
 ```
-
-`bootstrap.sh` 通过 `apt-get download` 拉取 `mull-14`、`libcmocka-dev`、
-`libcmocka0`、`lcov` 四个 `.deb`，用 `dpkg-deb -x` 解包到 `.tools/`。
 
 ---
 
-## 3. 目录结构
+## 2. 目录结构
 
 ```
 tests/
   unit/
-    ut_main.c          cmocka 入口（顺带把扫描目录隔离到 /tmp）
+    ut_main.c          cmocka 入口（隔离扫描目录到 /tmp）
     ut_common.h/.c     共享：server fixture、fake conn、输出捕获、pump 线程
     test_protocol.c    IPC 12 字节线协议布局
-    test_util.c        url_decode / parse_query / find_content_length
-    test_tree.c        命名空间树
-    test_core.c        生命周期 / 注册 / manifest / dispatch / hooks
+    test_tree.c        命名空间树 / 合并 / 销毁
+    test_core.c        生命周期 / 注册 / 文本 manifest / dispatch / hooks /
+                       宿主线程调度 / 单 poller 约束 / 并发注册
     test_sock.c        sock_conn_process / 客户端 / 假服务器
     test_conn.c        连接池 / 读写状态机（socketpair）
-    test_http.c        HTTP 解析 / 路由 / 响应 / OpenAPI
     test_interactive.c 白盒：include ../../src/fluxipc_interactive.c
     test_cli.c         白盒：include ../../cli/fluxipc_cli.c
-  integration/main.c   端到端（fork example_server，IPC/JSON/HTTP + 健壮性）
-  bench/bench.c       延迟/吞吐/RSS 基线（fluxipc-bench）
+  integration/main.c   端到端 IPC：调用、参数、列表、并发、大负载、优雅退出
+  bench/bench.c        延迟/吞吐/RSS 基线（fluxipc-bench）
   tools/
     bootstrap.sh        安装工具链
     env.sh              PATH / LD_LIBRARY_PATH
@@ -82,135 +47,123 @@ tests/
 
 ---
 
-## 4. 测试策略
-
-### 4.1 分层
+## 3. 测试策略
 
 | 层 | 手段 | 覆盖对象 |
 |----|------|---------|
-| L0 纯函数 | 直接调用 | util / tree / mask / manifest |
-| L1 处理器白盒 | 内存 `fluxipc_conn_t` 直接驱动 `sock_conn_process` / `http_conn_process` | 协议解析、路由、响应构造（无网络、确定） |
-| L2 组件 | 真实 Unix socket + 事件循环 pump 线程 | 客户端、连接状态机 |
-| L3 端到端 | fork `example_server` | IPC、本地 JSON、HTTP 全链路、并发、大负载、RSS |
-| L4 健壮性 | ASan/UBSan/LSan、假服务器、真实 socket 畸形协议、畸形 HTTP | 错误分支 / 内存安全 |
+| L0 纯函数 | 直接调用 | 树、路径查找、manifest 文本构造 |
+| L1 处理器白盒 | 内存 `fluxipc_conn_t` 驱动 `sock_conn_process` | 线协议解析、分发、响应构造 |
+| L2 组件 | 真实 Unix socket + 事件循环 pump 线程 | 客户端、连接池、读写状态机 |
+| L3 端到端 | fork `example_server` | 公共 IPC API、并发、大负载、优雅退出 |
+| L4 健壮性 | ASan/UBSan/LSan、假服务器、畸形协议 | 错误分支 / 内存安全 |
+| L5 线程模型 | 宿主线程运行 `fluxipc_run()`、并发注册、单 poller | 外部调度能力 |
 
-### 4.2 cmocka 用法
+### cmocka 约定
 
 - 每个模块一个 `int ut_xxx(void)`，内部 `cmocka_run_group_tests()`。
-- 需要 fresh server 的用例用 `cmocka_unit_test_setup_teardown(fn, setup, teardown)`，
-  保证断言失败也会执行 teardown（避免全局 `g_ctx` 污染后续用例）。
-- 客户端阻塞调用需要事件循环：`ut_server_pump_start()` 在辅助线程里跑
-  `fluxipc_poll()`。
-- 校验打印型函数/响应：`ut_capture_begin()/ut_capture_end()` 重定向 fd 1/2。
-- 校验 HTTP 响应字节：直接读 fake `conn.wbuf` / `conn.wlen`（注意不要假设 NUL 结尾）。
+- 需要 fresh server 的用例使用
+  `cmocka_unit_test_setup_teardown(fn, setup, teardown)`，断言失败也会执行
+  teardown，避免全局 `g_ctx` 污染后续用例。
+- 阻塞客户端调用需要事件循环：`ut_server_pump_start()` 在辅助线程里跑
+  `fluxipc_poll()`；`ut_server_pump_stop()` 用 `fluxipc_stop()` 唤醒并 join。
+- 校验打印型函数：`ut_capture_begin()/ut_capture_end()` 重定向 fd 1/2。
+- 校验响应字节：直接读 fake `conn.wbuf` / `conn.wlen`（不要假设 NUL 结尾）。
 
-### 4.3 白盒可见性（零侵入为主）
+### 白盒可见性
 
-- `sock_conn_process` / `http_conn_process` 已导出，配合栈上 fake 连接即可。
-- `fluxipc_interactive.c`、`cli/fluxipc_cli.c` 由测试 TU 直接 `#include`，从而可
-  直接调用 static 函数；Makefile 的 UT 链接列表**排除** `src/fluxipc_interactive.c`
+- `sock_conn_process` 已导出，配合栈上 fake 连接即可测试协议。
+- `fluxipc_interactive.c`、`cli/fluxipc_cli.c` 由测试 TU 直接 `#include`，
+  可直接调用 static 函数；UT 链接列表**排除** `src/fluxipc_interactive.c`
   以避免重复符号。
-- 仅新增一个功能开关：`conn.c` 在 `-DFLUXIPC_TESTING` 下导出
-  `fluxipc_ut_conn()/fluxipc_ut_conn_alloc()/fluxipc_ut_conn_read/write()`，
-  用于精确驱动连接状态机。
+- `-DFLUXIPC_TESTING` 下 `conn.c` 额外导出
+  `fluxipc_ut_conn()` / `fluxipc_ut_conn_alloc()` /
+  `fluxipc_ut_conn_read()` / `fluxipc_ut_conn_write()`，用于精确驱动连接状态机。
 
-### 4.4 测试隔离接缝
+### 测试隔离
 
-`load_all_endpoints()` 读取环境变量 `FLUXIPC_SCAN_DIR` 覆盖扫描目录（默认仍为
-`/run/user/<uid>`）。UT 入口把它指向 `/tmp/fluxipc-ut-scan`，于是：
-- 用例不会误连到其它进程/残留的 server；
-- 并行变异测试的不同 worker 互不干扰；
-- socket 路径同样从扫描根派生，保持自洽。
+`load_all_endpoints()` 读取环境变量 `FLUXIPC_SCAN_DIR` 覆盖扫描目录（默认
+`/run/user/<uid>`）。UT 入口把它指向 `/tmp/fluxipc-ut-scan`，避免并行测试或
+残留服务器互相干扰。
 
 ---
 
-## 5. 命令
+## 4. 关键覆盖点
+
+### 线协议
+
+- 12 字节请求/响应头大小与字段偏移
+- `FLUXIPC_OP_CALL` / `FLUXIPC_OP_LIST`
+- 错误 magic、超长 path、超长 arg、未知 op、path 内嵌 NUL
+- 参数数量上限 `FLUXIPC_MAX_ARGS`
+
+### 命名空间树
+
+- 容器/叶子创建、重复名、叶子上再建子节点
+- 路径注册自动建中间容器、重复斜杠、尾部斜杠回滚
+- 删除叶子/子树并裁剪空祖先
+- 字符串所有权与合并语义
+
+### 文本 manifest
+
+- `<id>\t<path>\t<summary>\n` 每行恰好两个分隔符
+- 用户 summary 中的 tab/newline 被替换为空格
+- 空子树返回空字符串而不是 NULL
+- `fluxipc_list_endpoints()` 在线解析并回调
+
+### 生命周期与线程
+
+- 重复 init / init 参数校验
+- `fluxipc_run()` 在宿主线程运行，`fluxipc_stop()` 正常退出
+- `fluxipc_poll_timeout(0)` 非阻塞
+- 第二个并发 poll 返回 `-EBUSY`
+- poll 线程运行期间从其他线程注册 50 个端点并成功列出
+- `fluxipc_wakeup()` 不停止循环
+- socket 权限 0666、退出后 socket 被删除
+
+### 端到端
+
+- `/system/info`、`/system/version`
+- 算术参数与返回
+- 未知路径/容器返回 `-ENOENT`
+- 32 KiB 单参数大负载
+- 8 线程 × 100 次并发调用
+- `/system/shutdown` 后服务端退出码为 0
+
+---
+
+## 5. 基准
+
+`make bench` 覆盖：
+
+- 顺序 IPC（`/system/info`）
+- 顺序 IPC（算术端点）
+- 4 线程并行 IPC
+
+可用环境变量调整：
 
 ```bash
-make tools        # 一次性安装 cmocka / Mull / lcov 到 .tools/
-make ut           # cmocka 单元测试
-make it           # 端到端集成测试（fork example_server）
-make test         # ut + it
-make cov          # 插桩构建 + 跑 ut/it + gcovr 报告，行/分支阈值门禁
-make mutate       # Mull 变异测试 + 分数门禁
-make ut-asan      # AddressSanitizer + UBSan（含泄漏检测，单元层）
-make it-asan      # 服务端 + 集成套件均插桩，LeakSanitizer 检查真实生命周期
-make test-mem     # ut-asan + it-asan
-make bench        # 性能基线：p50/p95/p99、ops/s、服务端 RSS
+BENCH_IPC_ITERS=20000 BENCH_THREADS=8 BENCH_WARMUP=500 make bench
+BENCH_MIN_IPC_OPS=10000 BENCH_MAX_P99_MS=1.0 make bench
 ```
 
-可调参数：
+输出包括 p50/p95/p99、平均延迟、ops/s、错误数和服务端 RSS。
 
-```bash
-COV_LINE_MIN=90 COV_BRANCH_MIN=78
-MUT_SCORE_MIN=70 MUT_WORKERS=4
-```
+---
 
-产物：`build/coverage/`（HTML/XML/summary）、`build/mutation/`、
-`build/asan/`（集成 ASan 二进制）。
+## 6. 工具链
 
-### 5.1 集成套件覆盖（`make it`）
+全部工具解包到仓库内 `.tools/`，不需要 root：
 
-- IPC 原始调用、参数、错误码、`FLUXIPC_STATIC`、`OP_LIST`
-- 本地 JSON：无参 / 位置参数 / query / JSON body / handler 错误 /
-  无 JSON handler / 非法 JSON / 无 schema 位置参数
-- 32 KiB JSON body（IPC + HTTP）
-- HTTP：GET/PUT/HEAD/OPTIONS/405/404/501、问题响应、OpenAPI、manifest
-- 畸形 HTTP：非法请求行、超长 header（431）、超长 body（413）
-- 真实 socket 畸形 IPC：坏 magic、未知 op、超长 path、缺少 NUL、截断 header
-- 4 线程混合 IPC + JSON + HTTP 并发
-- 1000 次 JSON IPC + 100 次 HTTP 后的服务端 RSS 增长粗检
-- 优雅 shutdown（`/system/shutdown`），让 LeakSanitizer 能检查服务端退出路径
-
-### 5.2 性能基线（`make bench`）
-
-`tests/bench/bench.c` 自启动 `example_server`，输出：
-
-| 指标 | 说明 |
+| 工具 | 用途 |
 |------|------|
-| `ops/s` | 吞吐量 |
-| `p50/p95/p99/mean/max` | 延迟分布 |
-| `errors` | 失败数（门禁为 0） |
-| server RSS | 全部负载前后的常驻内存 |
+| cmocka | 单元测试框架 |
+| Mull (`clang-14`) | 变异测试 |
+| gcovr | 覆盖率报告与阈值门禁 |
+| AddressSanitizer / UBSan / LSan | 内存/未定义行为/泄漏检测 |
 
-覆盖顺序 IPC、顺序 JSON IPC、位置参数 JSON IPC、顺序 HTTP、4 线程并行 IPC、4 线程并行 HTTP。
-可用 `BENCH_IPC_ITERS` / `BENCH_HTTP_ITERS` / `BENCH_THREADS` 调整规模；
-可选的性能门禁：`BENCH_MIN_IPC_OPS`、`BENCH_MIN_HTTP_OPS`、
-`BENCH_MAX_P99_MS`。
+```bash
+make tools            # 安装工具链
+```
 
----
-
-## 6. 变异测试（Mull）
-
-- 编译每个 TU **独立** clang 调用（`-grecord-command-line`），否则 Mull 无法
-  解析多输入命令行。
-- 启用 `cxx_default + cxx_logical + cxx_remove_negation`。
-- `excludePaths` 排除 `tests/`、`cli/`。
-- **Oracle 增强**：变异构建链接 ASan+UBSan（`detect_leaks=0`，因为 Mull runtime
-  自身分配会被误报为泄漏）。越界/UB/崩溃即视为 killed。
-- 分数 = killed / (killed + survived)，由 `--mutation-score-threshold` 直接门禁。
-
-已知无谓/难以杀死的存活项多为等价变异（例如 `while (line < end)` 的 `<→<=`，
-末次迭代无可观察差异；`sizeof(x)-1` 之类的常量折叠）。这些不影响功能正确性，
-保留在报告中供人工审阅。
-
----
-
-## 7. 过程中发现并修复的真实缺陷
-
-1. **`build_candidates()` 栈释放后使用**（`src/fluxipc_interactive.c`）：
-   `partial` 指向两个分支内各自声明的局部 `buf`，离开作用域后仍被
-   `strlen(partial)` 读取。ASan 报 `stack-use-after-scope`。修复：把 `buf`
-   提升到函数作用域，使 `partial` 在整个函数内有效。
-
-这正是「真实测试语义而非为过用例而过」的体现——该缺陷在常规测试下不会暴露，
-只有 ASan + 补全（Tab）路径的组合才能触发。
-
----
-
-## 8. 后续可提升项
-
-- 将 interactive 剩余 ~200 个存活变异中属于错误处理/内存分配的路径，用
-  malloc 故障注入（`-Wl,--wrap=malloc`）进一步杀死。
-- 为 `util` / HTTP parser 增加 libFuzzer 目标（固定种子 property test 已在计划中）。
-- 把 `make cov` / `make mutate` 接入 CI，并在 PR 上只跑受影响文件的变异子集。
+覆盖率门槛：`COV_LINE_MIN`（默认 90）、`COV_BRANCH_MIN`（默认 75）。
+变异分数门槛：`MUT_SCORE_MIN`（默认 70）。

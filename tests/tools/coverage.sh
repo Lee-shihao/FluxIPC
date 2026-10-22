@@ -11,7 +11,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
 LINE_MIN="${COV_LINE_MIN:-90}"
-BRANCH_MIN="${COV_BRANCH_MIN:-78}"
+BRANCH_MIN="${COV_BRANCH_MIN:-75}"
 BUILD="$ROOT/build/cov"
 OUT="$ROOT/build/coverage"
 TOOLS="$ROOT/.tools"
@@ -20,26 +20,21 @@ if [ ! -f "$TOOLS/usr/include/cmocka.h" ]; then
     echo "error: run 'make tools' first (cmocka not found)"; exit 1
 fi
 
-CJSON_CFLAGS="$(pkg-config --cflags libcjson 2>/dev/null || true)"
 RL_CFLAGS="$(pkg-config --cflags readline 2>/dev/null || true)"
-CJSON_LIBS="$(pkg-config --libs libcjson 2>/dev/null || echo -lcjson)"
 
 COV_CFLAGS="-Wall -O0 -g -Iinclude -I$TOOLS/usr/include -D_GNU_SOURCE \
- -Wno-unused-parameter -DFLUXIPC_TESTING --coverage $CJSON_CFLAGS $RL_CFLAGS"
-COV_LIBS="--coverage -lrt -lpthread -lreadline $CJSON_LIBS \
+ -Wno-unused-parameter -DFLUXIPC_TESTING --coverage $RL_CFLAGS"
+COV_LIBS="--coverage -lrt -lpthread -lreadline \
  -L$TOOLS/usr/lib/x86_64-linux-gnu -lcmocka \
  -Wl,-rpath,$TOOLS/usr/lib/x86_64-linux-gnu"
 
 LIB_SRCS=(src/fluxipc_core.c src/fluxipc_tree.c src/fluxipc_sock.c \
-          src/fluxipc_conn.c src/fluxipc_util.c src/fluxipc_http.c \
-          src/fluxipc_interactive.c)
+          src/fluxipc_conn.c src/fluxipc_interactive.c)
 
 UNIT_SRCS=(tests/unit/ut_main.c tests/unit/ut_common.c \
-           tests/unit/test_protocol.c tests/unit/test_util.c \
-           tests/unit/test_tree.c tests/unit/test_core.c \
+           tests/unit/test_protocol.c tests/unit/test_tree.c tests/unit/test_core.c \
            tests/unit/test_sock.c tests/unit/test_conn.c \
-           tests/unit/test_http.c tests/unit/test_interactive.c \
-           tests/unit/test_cli.c)
+           tests/unit/test_interactive.c tests/unit/test_cli.c)
 
 echo "== building instrumented unit suite =="
 rm -rf "$BUILD" "$OUT"

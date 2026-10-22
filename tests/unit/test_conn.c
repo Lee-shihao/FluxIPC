@@ -53,13 +53,13 @@ static void test_pool_exhaustion(void **state)
     for (int i = 0; i < FLUXIPC_MAX_CONNS; i++) {
         fds[i] = open("/dev/null", O_RDONLY);
         assert_true(fds[i] >= 0);
-        assert_true(fluxipc_ut_conn_alloc(fds[i], FLUXIPC_CONN_UNIX) >= 0);
+        assert_true(fluxipc_ut_conn_alloc(fds[i]) >= 0);
     }
     assert_int_equal(conn_pool_free_count(), 0);
 
     int extra = open("/dev/null", O_RDONLY);
     assert_true(extra >= 0);
-    assert_int_equal(fluxipc_ut_conn_alloc(extra, FLUXIPC_CONN_UNIX), -1);
+    assert_int_equal(fluxipc_ut_conn_alloc(extra), -1);
     close(extra);
 
     conn_pool_reset();
@@ -176,7 +176,7 @@ static void test_read_partial_then_complete(void **state)
     assert_int_equal(socketpair(AF_UNIX, SOCK_STREAM, 0, sv), 0);
     make_nonblock(sv[0]);
 
-    int idx = fluxipc_ut_conn_alloc(sv[0], FLUXIPC_CONN_UNIX);
+    int idx = fluxipc_ut_conn_alloc(sv[0]);
     assert_true(idx >= 0);
     fluxipc_conn_t *c = fluxipc_ut_conn(idx);
 
@@ -202,7 +202,7 @@ static void test_read_peer_closed(void **state)
     int sv[2];
     assert_int_equal(socketpair(AF_UNIX, SOCK_STREAM, 0, sv), 0);
     make_nonblock(sv[0]);
-    int idx = fluxipc_ut_conn_alloc(sv[0], FLUXIPC_CONN_UNIX);
+    int idx = fluxipc_ut_conn_alloc(sv[0]);
     fluxipc_conn_t *c = fluxipc_ut_conn(idx);
 
     close(sv[1]);
@@ -218,7 +218,7 @@ static void test_read_grows_request_buffer(void **state)
     int sv[2];
     assert_int_equal(socketpair(AF_UNIX, SOCK_STREAM, 0, sv), 0);
     make_nonblock(sv[0]);
-    int idx = fluxipc_ut_conn_alloc(sv[0], FLUXIPC_CONN_UNIX);
+    int idx = fluxipc_ut_conn_alloc(sv[0]);
     fluxipc_conn_t *c = fluxipc_ut_conn(idx);
     size_t initial_cap = c->rcap;
 
@@ -252,7 +252,7 @@ static void test_write_to_closed_peer(void **state)
     int sv[2];
     assert_int_equal(socketpair(AF_UNIX, SOCK_STREAM, 0, sv), 0);
     make_nonblock(sv[0]);
-    int idx = fluxipc_ut_conn_alloc(sv[0], FLUXIPC_CONN_UNIX);
+    int idx = fluxipc_ut_conn_alloc(sv[0]);
     fluxipc_conn_t *c = fluxipc_ut_conn(idx);
 
     close(sv[1]);
@@ -276,7 +276,7 @@ static void test_write_partial_then_drain(void **state)
     fcntl(sv[0], F_SETFL, fl | O_NONBLOCK);
     fcntl(sv[1], F_SETFL, fcntl(sv[1], F_GETFL, 0) | O_NONBLOCK);
 
-    int idx = fluxipc_ut_conn_alloc(sv[0], FLUXIPC_CONN_UNIX);
+    int idx = fluxipc_ut_conn_alloc(sv[0]);
     fluxipc_conn_t *c = fluxipc_ut_conn(idx);
 
     size_t total = 256 * 1024;
@@ -311,13 +311,13 @@ static void test_idle_timeout(void **state)
 
     int fds[2];
     assert_int_equal(socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
-    int idx = fluxipc_ut_conn_alloc(fds[0], FLUXIPC_CONN_UNIX);
+    int idx = fluxipc_ut_conn_alloc(fds[0]);
     assert_true(idx >= 0);
 
     fluxipc_conn_t *c = fluxipc_ut_conn(idx);
     c->last_active_ms = 1;       /* far older than the monotonic clock */
 
-    int rc = conn_poll(g_ctx);   /* immediate idle deadline */
+    int rc = conn_poll(g_ctx, -1);   /* immediate idle deadline */
     int closed = (c->fd == -1);
 
     close(fds[1]);
@@ -333,16 +333,13 @@ static void test_poll_no_descriptors(void **state)
     ut_server_up();
     conn_pool_init();
     int saved_srv  = g_ctx->server_fd;
-    int saved_http = g_ctx->http_fd;
     int saved_wake = g_ctx->wake_fd;
     g_ctx->server_fd = -1;
-    g_ctx->http_fd   = -1;
     g_ctx->wake_fd   = -1;   /* exercise the timeout fallback */
 
-    assert_int_equal(conn_poll(g_ctx), 0);   /* select timeout, no error */
+    assert_int_equal(conn_poll(g_ctx, 0), 0);   /* no descriptors, no error */
 
     g_ctx->server_fd = saved_srv;
-    g_ctx->http_fd   = saved_http;
     g_ctx->wake_fd   = saved_wake;
     ut_server_down();
 }
