@@ -499,19 +499,19 @@ int fluxipc_dispatch_ipc(fluxipc_ctx_t *ctx, const char *path,
     void                   *user = ctx->hook_user;
     pthread_mutex_unlock(&ctx->hook_lock);
 
-    fluxipc_event_t ev = {
+    fluxipc_request_t req = {
         .path    = path,
         .matched = handler ? 1 : 0,
     };
-    if (pre) pre(&ev, user);
+    if (pre) pre(&req, user);
 
     int rc = handler ? handler(data, argc, argv, out, out_cap, out_len)
                      : -ENOENT;
 
-    ev.status  = rc;
-    ev.raw     = out;
-    ev.raw_len = out_len ? *out_len : 0;
-    if (post) post(&ev, user);
+    req.status  = rc;
+    req.out_buf = out;
+    req.out_len = (rc == 0 && out_len) ? *out_len : 0;
+    if (post) post(&req, user);
     return rc;
 }
 

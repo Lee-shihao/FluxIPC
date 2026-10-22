@@ -66,17 +66,17 @@ static int stop_cb(const fluxipc_node_t *leaf, void *user)
     return 1;   /* stop immediately */
 }
 
-static fluxipc_event_t g_pre, g_post;
+static fluxipc_request_t g_pre, g_post;
 static int g_pre_n, g_post_n;
 
-static void pre_hook(const fluxipc_event_t *ev, void *user)
+static void pre_hook(const fluxipc_request_t *ev, void *user)
 {
     (void)user;
     g_pre = *ev;
     g_pre_n++;
 }
 
-static void post_hook(const fluxipc_event_t *ev, void *user)
+static void post_hook(const fluxipc_request_t *ev, void *user)
 {
     (void)user;
     g_post = *ev;
@@ -743,7 +743,7 @@ static void test_hooks(void **state)
     memset(&g_post, 0, sizeof(g_post));
 
     fluxipc_node_t *root = fluxipc_tree_root();
-    fluxipc_method_t m = { .ipc = ipc_handler };
+    fluxipc_method_t m = { .ipc = ipc_handler, .data = (void *)"D" };
     fluxipc_node_leaf(root, "hooked", &m);
 
     fluxipc_set_request_hooks(pre_hook, post_hook, NULL);
@@ -759,9 +759,10 @@ static void test_hooks(void **state)
     assert_string_equal(g_pre.path, "/hooked");
     assert_int_equal(g_pre.matched, 1);
     assert_int_equal(g_post.status, 0);
-    assert_int_equal(g_post.raw_len, len);
+    assert_ptr_equal(g_post.out_buf, out);
+    assert_int_equal(g_post.out_len, len);
 
-    /* unmatched request reports matched=0 */
+    /* unmatched request reports matched=0 and no response */
     fluxipc_dispatch_ipc(g_ctx, "/missing", 0, NULL, out, sizeof(out), NULL);
     assert_int_equal(g_pre.matched, 0);
 

@@ -1,7 +1,7 @@
 # Graph Report - FluxIPC  (2026-10-22)
 
 ## Corpus Check
-- 38 files · ~33,435 words
+- 38 files · ~33,484 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -10,7 +10,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `e9bf42f1`
+- Built from commit: `12da7bbb`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -86,7 +86,7 @@ Nodes (23): Compile-Time Registration via ELF Section (FLUXIPC_STATIC), Six-Laye
 
 ### Community 5 - "Community 5"
 Cohesion: 0.15
-Nodes (23): fluxipc_run(), arg_int(), fluxipc_event_t, compiled_info_ipc(), config_log_level_ipc(), config_max_clients_ipc(), demo_add_ipc(), demo_counter_ipc() (+15 more)
+Nodes (23): fluxipc_run(), arg_int(), fluxipc_request_t, compiled_info_ipc(), config_log_level_ipc(), config_max_clients_ipc(), demo_add_ipc(), demo_counter_ipc() (+15 more)
 
 ### Community 7 - "Community 7"
 Cohesion: 0.05

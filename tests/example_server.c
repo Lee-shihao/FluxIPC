@@ -280,13 +280,13 @@ static void register_device(const char *base, const char *name,
  *  Request observation hooks
  * ========================================================================== */
 
-static void req_pre_hook(const fluxipc_event_t *ev, void *user)
+static void req_pre_hook(const fluxipc_request_t *ev, void *user)
 {
     (void)user;
     printf("[hook:pre ] %s matched=%d\n", ev->path, ev->matched);
 }
 
-static void req_post_hook(const fluxipc_event_t *ev, void *user)
+static void req_post_hook(const fluxipc_request_t *ev, void *user)
 {
     (void)user;
     printf("[hook:post] %s status=%d\n", ev->path, ev->status);

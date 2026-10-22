@@ -288,16 +288,23 @@ void fluxipc_destroy(void);
 void fluxipc_usage(const char *prog);
 
 /* ─── Request observation hooks ───────────────────────────────────────────── */
-/** Read-only view of one request passed to the pre/post hooks. */
+/**
+ * Read-only view of one request passed to the pre/post hooks.
+ *
+ * The field names match the classic FluxIPC hook API (out_buf/out_len), so
+ * existing hook bodies that only read path/status/out_buf/out_len keep
+ * compiling unchanged.
+ */
 typedef struct {
     const char  *path;      /* namespace path                              */
     int          matched;   /* 1 if a handler was found                    */
     int          status;    /* handler return code — valid in POST only    */
-    const void  *raw;       /* response bytes — valid in POST hook only    */
-    size_t       raw_len;
-} fluxipc_event_t;
+    const void  *out_buf;   /* response bytes — valid in POST hook only    */
+    size_t       out_len;   /* response length — valid in POST hook only   */
+} fluxipc_request_t;
 
-typedef void (*fluxipc_request_hook_fn)(const fluxipc_event_t *ev, void *user);
+typedef void (*fluxipc_request_hook_fn)(const fluxipc_request_t *req,
+                                        void *user);
 
 /**
  * Register global pre/post request hooks.  Either may be NULL.  Must be called

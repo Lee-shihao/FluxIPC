@@ -15,8 +15,8 @@
     "semantic_hash": ""
   },
   "include/fluxipc.h": {
-    "mtime": 1792643626.3613687,
-    "ast_hash": "f347c5ed927e33416d3b108256a662e8",
+    "mtime": 1792651365.463434,
+    "ast_hash": "f20850fd0255e3dffc84c465a99fcb75",
     "semantic_hash": ""
   },
   "include/fluxipc_internal.h": {
@@ -30,8 +30,8 @@
     "semantic_hash": "ac77bfc19235cef2293a1e458fd51812"
   },
   "src/fluxipc_core.c": {
-    "mtime": 1792643596.6851969,
-    "ast_hash": "d783e78442e60d12aec91be4638e26b0",
+    "mtime": 1792651365.4651847,
+    "ast_hash": "c6eb07ac9e59aa2df223c5a32e3104f4",
     "semantic_hash": ""
   },
   "src/fluxipc_interactive.c": {
@@ -50,8 +50,8 @@
     "semantic_hash": ""
   },
   "tests/example_server.c": {
-    "mtime": 1792642822.7608645,
-    "ast_hash": "71f4b98653b990f3e294e061e73c17c6",
+    "mtime": 1792651064.7198782,
+    "ast_hash": "31de73b6211be4a488dd792c9f38f3f0",
     "semantic_hash": ""
   },
   "CLAUDE.md": {
@@ -145,8 +145,8 @@
     "semantic_hash": ""
   },
   "tests/unit/test_core.c": {
-    "mtime": 1792642882.6501217,
-    "ast_hash": "60db19d1c80b46d782c791c86b0aceba",
+    "mtime": 1792651365.46556,
+    "ast_hash": "6149cf1fac7dbf608e301b2bc194920d",
     "semantic_hash": ""
   },
   "tests/unit/test_interactive.c": {
